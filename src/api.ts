@@ -1,4 +1,11 @@
-import type { ApiItem, ApiResponse, Organization, Schedule, SearchParams } from './types.js';
+import type {
+  ApiItem,
+  ApiResponse,
+  DayOfWeek,
+  Organization,
+  Schedule,
+  SearchParams,
+} from './types.js';
 
 const API_BASE_URL = 'https://catalog.api.2gis.ru/3.0/items';
 const API_KEY = 'c7f1a769-c8a5-4636-b14d-d8c987808a12';
@@ -174,26 +181,19 @@ export async function search(params: SearchParams): Promise<ApiResponse> {
   return data;
 }
 
+const DAYS_OF_WEEK: DayOfWeek[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
 function parseSchedule(
-  apiSchedule?: Record<string, { working_hours: Array<{ from: string; to: string }> }>,
+  apiSchedule?: Partial<Record<DayOfWeek, { working_hours: Array<{ from: string; to: string }> }>>,
 ): Schedule | undefined {
   if (!apiSchedule) return undefined;
 
   const schedule: Schedule = {};
-  const dayMap: Record<string, keyof Schedule> = {
-    Mon: 'Mon',
-    Tue: 'Tue',
-    Wed: 'Wed',
-    Thu: 'Thu',
-    Fri: 'Fri',
-    Sat: 'Sat',
-    Sun: 'Sun',
-  };
 
-  for (const [day, data] of Object.entries(apiSchedule)) {
-    const mappedDay = dayMap[day];
-    if (mappedDay && data.working_hours) {
-      schedule[mappedDay] = data.working_hours.map((wh) => ({
+  for (const day of DAYS_OF_WEEK) {
+    const data = apiSchedule[day];
+    if (data?.working_hours) {
+      schedule[day] = data.working_hours.map((wh) => ({
         from: wh.from,
         to: wh.to,
       }));
@@ -220,7 +220,6 @@ export function parseItem(item: ApiItem): Organization {
     district,
     point: item.point ?? { lat: 0, lon: 0 },
     phone,
-    website: item.links?.website,
     schedule: parseSchedule(item.schedule),
     rubrics:
       item.rubrics?.map((r) => ({

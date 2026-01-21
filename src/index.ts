@@ -2,7 +2,9 @@ export { buildSearchUrl, parseItem, search, searchAllPages, searchOrganizations 
 export type {
   ApiItem,
   ApiResponse,
+  DayOfWeek,
   Organization,
+  Point,
   Rubric,
   Schedule,
   SearchParams,

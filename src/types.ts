@@ -1,8 +1,14 @@
+export interface Point {
+  lat: number;
+  lon: number;
+}
+
+export type DayOfWeek = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun';
+
 export interface SearchParams {
   query: string;
-  viewpoint1: { lon: number; lat: number };
-  viewpoint2: { lon: number; lat: number };
-  pageSize?: number;
+  viewpoint1: Point;
+  viewpoint2: Point;
   page?: number;
   locale?: string;
 }
@@ -14,9 +20,8 @@ export interface Organization {
   addressComment: string | undefined;
   city: string | undefined;
   district: string | undefined;
-  point: { lat: number; lon: number };
+  point: Point;
   phone: string | undefined;
-  website: string | undefined;
   schedule: Schedule | undefined;
   rubrics: Rubric[];
   rating: number | undefined;
@@ -26,15 +31,7 @@ export interface Organization {
   orgBranchCount: number | undefined;
 }
 
-export interface Schedule {
-  Mon?: WorkingHours[];
-  Tue?: WorkingHours[];
-  Wed?: WorkingHours[];
-  Thu?: WorkingHours[];
-  Fri?: WorkingHours[];
-  Sat?: WorkingHours[];
-  Sun?: WorkingHours[];
-}
+export type Schedule = Partial<Record<DayOfWeek, WorkingHours[]>>;
 
 export interface WorkingHours {
   from: string;
@@ -83,16 +80,13 @@ export interface ApiItem {
     name: string;
     type: string;
   }>;
-  point?: {
-    lat: number;
-    lon: number;
-  };
+  point?: Point;
   org?: {
     id: string;
     name: string;
     branch_count?: number;
   };
-  schedule?: Record<string, { working_hours: Array<{ from: string; to: string }> }>;
+  schedule?: Partial<Record<DayOfWeek, { working_hours: Array<{ from: string; to: string }> }>>;
   rubrics?: Array<{
     id: string;
     name: string;
@@ -103,9 +97,6 @@ export interface ApiItem {
     general_review_count?: number;
     rating?: number;
     review_count?: number;
-  };
-  links?: {
-    website?: string;
   };
   contact_groups?: Array<{
     contacts?: Array<{

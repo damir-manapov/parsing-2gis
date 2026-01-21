@@ -21,10 +21,9 @@ describe('buildSearchUrl', () => {
       query: 'test',
       viewpoint1: { lon: 37.5, lat: 55.9 },
       viewpoint2: { lon: 37.6, lat: 55.5 },
-      pageSize: 50, // This is ignored
     });
 
-    // API requires page_size=12
+    // API requires page_size=12 (fixed, not configurable)
     expect(url).toContain('page_size=12');
   });
 });

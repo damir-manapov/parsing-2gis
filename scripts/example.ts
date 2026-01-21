@@ -1,4 +1,6 @@
-import { searchOrganizations } from './api.js';
+// Run with: bun scripts/example.ts
+
+import { searchOrganizations } from '../src/api.js';
 
 async function main() {
   const moscowViewpoint1 = { lon: 37.556366, lat: 55.926069 };

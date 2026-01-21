@@ -4,10 +4,15 @@ import { getOrganizationById, search } from '../src/api.js';
 import type { Organization } from '../src/types.js';
 import {
   createFileTimestamp,
+  createMetadata,
+  MOSCOW_VIEWPOINT_1,
+  MOSCOW_VIEWPOINT_2,
   parseArgs,
+  parseViewpoints,
   printOrganizationSummary,
   saveParsedData,
   saveRawData,
+  slugify,
 } from '../src/utils.js';
 
 async function sleep(ms: number): Promise<void> {
@@ -49,15 +54,14 @@ async function enrichOrganizations(
 async function main() {
   const args = parseArgs(process.argv.slice(2), {
     query: 'кальян',
-    lat1: '55.926069',
-    lon1: '37.556366',
-    lat2: '55.581373',
-    lon2: '37.683974',
+    lat1: String(MOSCOW_VIEWPOINT_1.lat),
+    lon1: String(MOSCOW_VIEWPOINT_1.lon),
+    lat2: String(MOSCOW_VIEWPOINT_2.lat),
+    lon2: String(MOSCOW_VIEWPOINT_2.lon),
     delay: '500',
   });
 
-  const viewpoint1 = { lon: Number(args.lon1), lat: Number(args.lat1) };
-  const viewpoint2 = { lon: Number(args.lon2), lat: Number(args.lat2) };
+  const { viewpoint1, viewpoint2 } = parseViewpoints(args);
   const delayMs = Number(args.delay);
 
   console.log(`Searching for "${args.query}" in Moscow...\n`);
@@ -84,10 +88,8 @@ async function main() {
   console.log(`\nEnriched ${enrichedOrgs.length} organizations.\n`);
 
   // Step 3: Prepare metadata and save
-  const timestamp = new Date().toISOString();
   const fileTimestamp = createFileTimestamp();
-  const metadata = {
-    fetchedAt: timestamp,
+  const metadata = createMetadata({
     apiVersion: searchResponse.meta.api_version,
     endpoint: 'search+byid',
     statusCode: searchResponse.meta.code,
@@ -97,10 +99,10 @@ async function main() {
     searchResponseTimeMs: searchResponseTime,
     byIdResponseTimeMs: byIdResponseTime,
     totalResponseTimeMs: Date.now() - startTime,
-  };
+  });
 
   // Save files
-  const querySlug = args.query.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const querySlug = slugify(args.query);
   const rawFile = await saveRawData(
     `${querySlug}-moscow-enriched-${fileTimestamp}.json`,
     metadata,

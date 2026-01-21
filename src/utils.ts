@@ -1,5 +1,9 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import type { Organization } from './types.js';
+import type { Organization, Point } from './types.js';
+
+// Moscow default coordinates
+export const MOSCOW_VIEWPOINT_1: Point = { lon: 37.556366, lat: 55.926069 };
+export const MOSCOW_VIEWPOINT_2: Point = { lon: 37.683974, lat: 55.581373 };
 
 export interface Metadata {
   fetchedAt: string;
@@ -70,4 +74,60 @@ export function parseArgs<T extends string>(
   }
 
   return result;
+}
+
+export function parseViewpoints(args: { lat1: string; lon1: string; lat2: string; lon2: string }): {
+  viewpoint1: Point;
+  viewpoint2: Point;
+} {
+  return {
+    viewpoint1: { lon: Number(args.lon1), lat: Number(args.lat1) },
+    viewpoint2: { lon: Number(args.lon2), lat: Number(args.lat2) },
+  };
+}
+
+export function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+
+export interface CreateMetadataParams {
+  apiVersion: string;
+  endpoint: string;
+  statusCode: number;
+  query: unknown;
+  responseTimeMs?: number;
+  totalResults?: number;
+  enrichedCount?: number;
+  searchResponseTimeMs?: number;
+  byIdResponseTimeMs?: number;
+  totalResponseTimeMs?: number;
+}
+
+export function createMetadata(params: CreateMetadataParams): Metadata {
+  return {
+    fetchedAt: new Date().toISOString(),
+    ...params,
+  };
+}
+
+export function printOrganization(org: Organization): void {
+  console.log('=== Organization ===');
+  console.log(`Name: ${org.name}`);
+  console.log(`Address: ${org.address}${org.addressComment ? ` (${org.addressComment})` : ''}`);
+  console.log(`City: ${org.city ?? 'N/A'}, District: ${org.district ?? 'N/A'}`);
+  console.log(`Coordinates: ${org.point.lat}, ${org.point.lon}`);
+  console.log(`Rating: ${org.rating ?? 'N/A'} (${org.reviewCount ?? 0} reviews)`);
+  console.log(`Rubrics: ${org.rubrics.map((r) => r.name).join(', ')}`);
+
+  console.log('\n=== Contacts ===');
+  console.log(`Phone: ${org.phone ?? '-'}`);
+  console.log(`Website: ${org.website ?? '-'}`);
+  console.log(`Email: ${org.email ?? '-'}`);
+  console.log(`Telegram: ${org.telegram ?? '-'}`);
+  console.log(`VK: ${org.vkontakte ?? '-'}`);
+
+  if (org.orgName) {
+    console.log('\n=== Organization Info ===');
+    console.log(`Org: ${org.orgName} (${org.orgBranchCount ?? 0} branches)`);
+  }
 }

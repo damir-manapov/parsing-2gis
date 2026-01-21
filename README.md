@@ -1,11 +1,11 @@
 # parsing-2gis
 
-A tool for parsing 2gis data.
+A TypeScript library for parsing 2GIS search API data.
 
 ## Requirements
 
 - Node.js 22+
-- pnpm
+- pnpm (or bun)
 - gitleaks (for security checks)
 
 ## Installation
@@ -14,11 +14,37 @@ A tool for parsing 2gis data.
 pnpm install
 ```
 
-## Usage
+## Configuration
+
+Set the `TWOGIS_API_KEY` environment variable:
 
 ```bash
-pnpm start
+export TWOGIS_API_KEY=your-api-key-here
 ```
+
+You can get the API key by inspecting network requests on 2gis.ru.
+
+## Usage
+
+```typescript
+import { searchOrganizations } from './src/api.js';
+
+const orgs = await searchOrganizations({
+  query: 'кальян',
+  viewpoint1: { lon: 37.556366, lat: 55.926069 },
+  viewpoint2: { lon: 37.683974, lat: 55.581373 },
+});
+```
+
+### Run Example
+
+```bash
+bun scripts/example.ts
+```
+
+## Data Storage
+
+API results are stored in the `data/` folder (gitignored).
 
 ## Development
 

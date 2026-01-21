@@ -1,0 +1,2 @@
+# Historical commit where API key was committed before being moved to env var
+784479886b750200cd325578295f11959d7d7ad7:src/api.ts:generic-api-key:4

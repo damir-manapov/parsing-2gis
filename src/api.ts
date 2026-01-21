@@ -8,7 +8,15 @@ import type {
 } from './types.js';
 
 const API_BASE_URL = 'https://catalog.api.2gis.ru/3.0/items';
-const API_KEY = 'c7f1a769-c8a5-4636-b14d-d8c987808a12';
+
+function getApiKey(): string {
+  const key = process.env['TWOGIS_API_KEY'];
+  if (!key) {
+    throw new Error('TWOGIS_API_KEY environment variable is not set');
+  }
+  return key;
+}
+
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36';
 
@@ -138,7 +146,7 @@ export function buildSearchUrl(params: SearchParams): string {
   // Build URL manually to avoid encoding commas in fields and type parameters
   const queryEncoded = encodeURIComponent(query);
   const urlParts = [
-    `key=${API_KEY}`,
+    `key=${getApiKey()}`,
     `q=${queryEncoded}`,
     `fields=${DEFAULT_FIELDS}`,
     `type=${DEFAULT_TYPES}`,

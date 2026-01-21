@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { buildSearchUrl, parseItem } from '../src/api.js';
 import type { ApiItem } from '../src/types.js';
+
+beforeAll(() => {
+  process.env['TWOGIS_API_KEY'] = 'test-api-key';
+});
 
 describe('buildSearchUrl', () => {
   it('should build valid search URL', () => {

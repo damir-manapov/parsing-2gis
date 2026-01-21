@@ -49,6 +49,20 @@ interface ScrapedOrganization {
   rating?: number;
   reviewCount?: number;
   rubrics: string[];
+  // Review summary
+  reviewSummary?: {
+    rating: number;
+    reviewCount: number;
+    generalRating?: number;
+    generalReviewCount?: number;
+    orgRating?: number;
+    orgReviewCount?: number;
+    sources?: Array<{
+      tag: string;
+      rating?: number;
+      reviewCount?: number;
+    }>;
+  };
   type?: string;
   // Additional fields
   coordinates?: Coordinates;
@@ -252,6 +266,38 @@ function extractOrganization(item: any, logger: Logger): ScrapedOrganization {
       logger.debug(`Failed to extract coordinates: ${e}`);
     }
 
+    // Extract review summary
+    let reviewSummary:
+      | {
+          rating: number;
+          reviewCount: number;
+          generalRating?: number;
+          generalReviewCount?: number;
+          orgRating?: number;
+          orgReviewCount?: number;
+          sources?: Array<{ tag: string; rating?: number; reviewCount?: number }>;
+        }
+      | undefined;
+    try {
+      if (item.reviews) {
+        reviewSummary = {
+          rating: item.reviews.rating || 0,
+          reviewCount: item.reviews.review_count || 0,
+          generalRating: item.reviews.general_rating,
+          generalReviewCount: item.reviews.general_review_count,
+          orgRating: item.reviews.org_rating,
+          orgReviewCount: item.reviews.org_review_count,
+          sources: item.reviews.items?.map((source: any) => ({
+            tag: source.tag,
+            rating: source.rating,
+            reviewCount: source.review_count,
+          })),
+        };
+      }
+    } catch (e) {
+      logger.debug(`Failed to extract review summary: ${e}`);
+    }
+
     // Extract nearest metro stations
     let nearestMetro: MetroStation[] | undefined;
     try {
@@ -358,6 +404,7 @@ function extractOrganization(item: any, logger: Logger): ScrapedOrganization {
       ...(rating !== undefined && { rating }),
       ...(reviewCount !== undefined && { reviewCount }),
       rubrics,
+      ...(reviewSummary && { reviewSummary }),
       ...(item.type && { type: item.type }),
       ...(coordinates && { coordinates }),
       ...(nearestMetro && { nearestMetro }),

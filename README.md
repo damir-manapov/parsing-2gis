@@ -54,6 +54,32 @@ pnpm dev
 
 ## Scripts
 
+### Available Scripts
+
+```bash
+# Search using 2GIS API (basic search without details)
+bun scripts/search-basic.ts --query "кальян"
+
+# Scrape using Playwright (full details with browser automation)
+bun scripts/scrape-search.ts --query "кальян" --max-records 50 --delay 2000
+
+# Fetch by ID (requires special ID format with hash)
+bun scripts/fetch-by-id.ts
+
+# Enrich search results (experimental - API session issues)
+bun scripts/enrich-search.ts --query "кальян"
+```
+
+### Scraper Options
+
+The Playwright scraper supports:
+- `--query` - Search query (default: "кальян")
+- `--max-records` - Maximum results to scrape (default: 50)
+- `--delay` - Delay between requests in ms (default: 2000)
+- `--max-retries` - Retry attempts for failed operations (default: 3)
+
+### Development Scripts
+
 - `pnpm dev` - Run in watch mode
 - `pnpm start` - Run the application
 - `pnpm build` - Type check
@@ -123,3 +149,28 @@ Plain numeric IDs like `70000001058714012` will return 403 errors.
 - **Search** (`/items`): Returns basic organization data, works with simpler parameters
 - **ByID** (`/items/byid`): Returns full details including contacts (website, email, telegram, vkontakte), requires complex parameters
 
+## Scraping Approach
+
+Due to API limitations (session-based IDs, complex authentication), this project uses **Playwright** for reliable data extraction:
+
+### Features
+
+- **Request Blocking**: Disables images, fonts, stylesheets, and analytics for faster scraping
+- **Retry Logic**: Exponential backoff with configurable attempts (default: 3)
+- **Structured Logging**: Timestamped logs with progress tracking
+- **Dual Data Sources**: Captures both API responses and `window.initialState` (server-side rendering)
+- **Progress Tracking**: Real-time counters showing success/failure rates
+- **Configurable Limits**: Max records, delays, and retry attempts
+
+### Why Playwright?
+
+1. **Session IDs**: 2GIS uses session-based IDs that expire quickly
+2. **Complex Auth**: Multiple authentication parameters required
+3. **Hybrid Loading**: Data comes from both API calls and pre-rendered state
+4. **Reliability**: Browser automation handles all authentication automatically
+
+### Data Output
+
+Scraped data is saved in two formats:
+- **Raw data** (`data/raw/`): Complete API responses and initialState dumps (9MB+)
+- **Parsed data** (`data/parsed/`): Extracted fields (name, address, phone, website, rating, rubrics)

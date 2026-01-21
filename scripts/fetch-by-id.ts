@@ -1,28 +1,36 @@
-// Run with: bun scripts/fetch-by-id.ts <organization-id>
+// Run with: bun scripts/fetch-by-id.ts <organization-id> [--lat1 55.925802] [--lon1 37.536767] [--lat2 55.581639] [--lon2 37.703573]
 
-import { mkdir, writeFile } from 'node:fs/promises';
 import { getOrganizationById } from '../src/api.js';
+import { createFileTimestamp, parseArgs, saveParsedData } from '../src/utils.js';
 
 async function main() {
   const id = process.argv[2];
 
   if (!id) {
-    console.error('Usage: bun scripts/fetch-by-id.ts <organization-id>');
+    console.error(
+      'Usage: bun scripts/fetch-by-id.ts <organization-id> [--lat1 55.925802] [--lon1 37.536767] [--lat2 55.581639] [--lon2 37.703573]',
+    );
     console.error('Example: bun scripts/fetch-by-id.ts 70000001058714012_hash...');
     process.exit(1);
   }
 
-  // Moscow viewport (default)
-  const moscowViewpoint1 = { lon: 37.536767, lat: 55.925802 };
-  const moscowViewpoint2 = { lon: 37.703573, lat: 55.581639 };
+  const args = parseArgs(process.argv.slice(3), {
+    lat1: '55.925802',
+    lon1: '37.536767',
+    lat2: '55.581639',
+    lon2: '37.703573',
+  });
+
+  const viewpoint1 = { lon: Number(args.lon1), lat: Number(args.lat1) };
+  const viewpoint2 = { lon: Number(args.lon2), lat: Number(args.lat2) };
 
   console.log(`Fetching organization: ${id}\n`);
 
   const startTime = Date.now();
   const byIdParams = {
     id,
-    viewpoint1: moscowViewpoint1,
-    viewpoint2: moscowViewpoint2,
+    viewpoint1,
+    viewpoint2,
   };
 
   const org = await getOrganizationById(byIdParams);
@@ -55,7 +63,7 @@ async function main() {
 
   // Prepare metadata
   const timestamp = new Date().toISOString();
-  const fileTimestamp = timestamp.replace(/[:.]/g, '-');
+  const fileTimestamp = createFileTimestamp();
   const metadata = {
     fetchedAt: timestamp,
     apiVersion: '3.0.x', // We don't have access to raw response here
@@ -65,10 +73,8 @@ async function main() {
     responseTimeMs: responseTime,
   };
 
-  // Save parsed data with metadata (no raw data available from getOrganizationById)
-  await mkdir('data/parsed', { recursive: true });
-  const parsedFile = `data/parsed/org-${org.id}-${fileTimestamp}.json`;
-  await writeFile(parsedFile, JSON.stringify({ meta: metadata, data: org }, null, 2));
+  // Save parsed data
+  const parsedFile = await saveParsedData(`org-${org.id}-${fileTimestamp}.json`, metadata, org);
 
   console.log(`\n✅ Saved to ${parsedFile}`);
   console.log('Note: Raw response not available (getOrganizationById returns parsed data only)');

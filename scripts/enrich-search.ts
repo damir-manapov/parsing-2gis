@@ -1,10 +1,14 @@
-// Run with: bun scripts/enrich-search.ts
+// Run with: bun scripts/enrich-search.ts [--query "кальян"] [--lat1 55.926069] [--lon1 37.556366] [--lat2 55.581373] [--lon2 37.683974] [--delay 500]
 
-import { mkdir, writeFile } from 'node:fs/promises';
 import { getOrganizationById, search } from '../src/api.js';
 import type { Organization } from '../src/types.js';
-
-const DELAY_MS = 500; // Delay between requests to avoid rate limiting
+import {
+  createFileTimestamp,
+  parseArgs,
+  printOrganizationSummary,
+  saveParsedData,
+  saveRawData,
+} from '../src/utils.js';
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -12,6 +16,7 @@ async function sleep(ms: number): Promise<void> {
 
 async function enrichOrganizations(
   branches: Array<{ id: string; name: string }>,
+  delayMs: number,
 ): Promise<Organization[]> {
   const enrichedOrgs: Organization[] = [];
 
@@ -32,7 +37,7 @@ async function enrichOrganizations(
     }
 
     if (i < branches.length - 1) {
-      await sleep(DELAY_MS);
+      await sleep(delayMs);
     }
   }
 
@@ -40,18 +45,27 @@ async function enrichOrganizations(
 }
 
 async function main() {
-  const moscowViewpoint1 = { lon: 37.556366, lat: 55.926069 };
-  const moscowViewpoint2 = { lon: 37.683974, lat: 55.581373 };
-  const query = 'кальян';
+  const args = parseArgs(process.argv.slice(2), {
+    query: 'кальян',
+    lat1: '55.926069',
+    lon1: '37.556366',
+    lat2: '55.581373',
+    lon2: '37.683974',
+    delay: '500',
+  });
 
-  console.log(`Searching for "${query}" in Moscow...\n`);
+  const viewpoint1 = { lon: Number(args.lon1), lat: Number(args.lat1) };
+  const viewpoint2 = { lon: Number(args.lon2), lat: Number(args.lat2) };
+  const delayMs = Number(args.delay);
+
+  console.log(`Searching for "${args.query}" in Moscow...\n`);
 
   const startTime = Date.now();
   // Step 1: Search for organizations
   const searchResponse = await search({
-    query,
-    viewpoint1: moscowViewpoint1,
-    viewpoint2: moscowViewpoint2,
+    query: args.query,
+    viewpoint1,
+    viewpoint2,
   });
   const searchResponseTime = Date.now() - startTime;
 
@@ -62,20 +76,20 @@ async function main() {
 
   // Step 2: Fetch full details for each organization
   const byIdStartTime = Date.now();
-  const enrichedOrgs = await enrichOrganizations(branches);
+  const enrichedOrgs = await enrichOrganizations(branches, delayMs);
   const byIdResponseTime = Date.now() - byIdStartTime;
 
   console.log(`\nEnriched ${enrichedOrgs.length} organizations.\n`);
 
   // Step 3: Prepare metadata and save
   const timestamp = new Date().toISOString();
-  const fileTimestamp = timestamp.replace(/[:.]/g, '-');
+  const fileTimestamp = createFileTimestamp();
   const metadata = {
     fetchedAt: timestamp,
     apiVersion: searchResponse.meta.api_version,
     endpoint: 'search+byid',
     statusCode: searchResponse.meta.code,
-    query,
+    query: args.query,
     totalResults: searchResponse.result?.total ?? 0,
     enrichedCount: enrichedOrgs.length,
     searchResponseTimeMs: searchResponseTime,
@@ -83,28 +97,24 @@ async function main() {
     totalResponseTimeMs: Date.now() - startTime,
   };
 
-  // Save raw search response with metadata
-  await mkdir('data/raw', { recursive: true });
-  const rawFile = `data/raw/kalyan-moscow-enriched-${fileTimestamp}.json`;
-  await writeFile(rawFile, JSON.stringify({ meta: metadata, searchData: searchResponse }, null, 2));
-
-  // Save parsed enriched data with metadata
-  await mkdir('data/parsed', { recursive: true });
-  const parsedFile = `data/parsed/kalyan-moscow-enriched-${fileTimestamp}.json`;
-  await writeFile(parsedFile, JSON.stringify({ meta: metadata, data: enrichedOrgs }, null, 2));
+  // Save files
+  const querySlug = args.query.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const rawFile = await saveRawData(
+    `${querySlug}-moscow-enriched-${fileTimestamp}.json`,
+    metadata,
+    { searchData: searchResponse },
+  );
+  const parsedFile = await saveParsedData(
+    `${querySlug}-moscow-enriched-${fileTimestamp}.json`,
+    metadata,
+    enrichedOrgs,
+  );
 
   console.log(`✅ Saved ${enrichedOrgs.length} organizations`);
   console.log(`   Raw: ${rawFile}`);
   console.log(`   Parsed: ${parsedFile}`);
 
-  // Summary
-  console.log('\n=== Summary ===');
-  console.log(`Total: ${enrichedOrgs.length}`);
-  console.log(`With phone: ${enrichedOrgs.filter((o) => o.phone).length}`);
-  console.log(`With website: ${enrichedOrgs.filter((o) => o.website).length}`);
-  console.log(`With email: ${enrichedOrgs.filter((o) => o.email).length}`);
-  console.log(`With telegram: ${enrichedOrgs.filter((o) => o.telegram).length}`);
-  console.log(`With VK: ${enrichedOrgs.filter((o) => o.vkontakte).length}`);
+  printOrganizationSummary(enrichedOrgs);
 }
 
 main().catch(console.error);

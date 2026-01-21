@@ -1,19 +1,27 @@
-// Run with: bun scripts/search-basic.ts
+// Run with: bun scripts/search-basic.ts [--query "кальян"] [--lat1 55.926069] [--lon1 37.556366] [--lat2 55.581373] [--lon2 37.683974]
 
-import { mkdir, writeFile } from 'node:fs/promises';
 import { search, searchOrganizations } from '../src/api.js';
+import { createFileTimestamp, parseArgs, saveParsedData, saveRawData } from '../src/utils.js';
 
 async function main() {
-  const moscowViewpoint1 = { lon: 37.556366, lat: 55.926069 };
-  const moscowViewpoint2 = { lon: 37.683974, lat: 55.581373 };
+  const args = parseArgs(process.argv.slice(2), {
+    query: 'кальян',
+    lat1: '55.926069',
+    lon1: '37.556366',
+    lat2: '55.581373',
+    lon2: '37.683974',
+  });
 
-  console.log('Searching for "кальян" in Moscow...\n');
+  const viewpoint1 = { lon: Number(args.lon1), lat: Number(args.lat1) };
+  const viewpoint2 = { lon: Number(args.lon2), lat: Number(args.lat2) };
+
+  console.log(`Searching for "${args.query}" in Moscow...\n`);
 
   const startTime = Date.now();
   const searchParams = {
-    query: 'кальян',
-    viewpoint1: moscowViewpoint1,
-    viewpoint2: moscowViewpoint2,
+    query: args.query,
+    viewpoint1,
+    viewpoint2,
   };
 
   // Get raw response
@@ -42,7 +50,7 @@ async function main() {
 
   // Prepare metadata
   const timestamp = new Date().toISOString();
-  const fileTimestamp = timestamp.replace(/[:.]/g, '-');
+  const fileTimestamp = createFileTimestamp();
   const metadata = {
     fetchedAt: timestamp,
     apiVersion: rawResponse.meta.api_version,
@@ -53,15 +61,18 @@ async function main() {
     responseTimeMs: responseTime,
   };
 
-  // Save raw response with metadata
-  await mkdir('data/raw', { recursive: true });
-  const rawFile = `data/raw/kalyan-moscow-${fileTimestamp}.json`;
-  await writeFile(rawFile, JSON.stringify({ meta: metadata, data: rawResponse }, null, 2));
-
-  // Save parsed data with metadata
-  await mkdir('data/parsed', { recursive: true });
-  const parsedFile = `data/parsed/kalyan-moscow-${fileTimestamp}.json`;
-  await writeFile(parsedFile, JSON.stringify({ meta: metadata, data: organizations }, null, 2));
+  // Save files
+  const querySlug = args.query.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const rawFile = await saveRawData(
+    `${querySlug}-moscow-${fileTimestamp}.json`,
+    metadata,
+    rawResponse,
+  );
+  const parsedFile = await saveParsedData(
+    `${querySlug}-moscow-${fileTimestamp}.json`,
+    metadata,
+    organizations,
+  );
 
   console.log(`✅ Saved ${organizations.length} organizations`);
   console.log(`   Raw: ${rawFile}`);

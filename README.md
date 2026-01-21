@@ -31,6 +31,22 @@ bun scripts/scrape-search.ts --query "кальян" --max-records 50 --delay 200
 - `--max-records` - Maximum results to scrape (default: 50)
 - `--delay` - Delay between requests in ms (default: 2000)
 - `--max-retries` - Retry attempts for failed operations (default: 3)
+- `--headless` - Run browser in headless mode (default: true)
+- `--include-reviews` - Extract reviews for each organization (default: false)
+- `--max-reviews` - Maximum reviews per organization (default: 100, actual limit: 50)
+
+### Examples
+
+```bash
+# Basic scraping
+bun scripts/scrape-search.ts --query "ресторан" --max-records 10
+
+# Include reviews
+bun scripts/scrape-search.ts --query "кафе" --max-records 5 --include-reviews true --max-reviews 20
+
+# Visible browser (non-headless)
+bun scripts/scrape-search.ts --query "кальян" --headless false
+```
 
 ## Data Storage
 
@@ -48,7 +64,10 @@ pnpm dev
 
 ```bash
 # Scrape organizations with Playwright
-bun scripts/scrape-search.ts --query "кальян" --max-records 50 --delay 2000
+bun scripts/scrape-search.ts --query "кальян" --max-records 50
+
+# Include reviews (up to 50 per organization)
+bun scripts/scrape-search.ts --query "ресторан" --max-records 10 --include-reviews true --max-reviews 20
 ```
 
 ### Development Scripts
@@ -101,12 +120,47 @@ Direct 2GIS API usage has significant limitations:
 Browser automation handles all complexity automatically:
 - **Request Blocking**: Disables images, fonts, stylesheets, analytics for speed
 - **Retry Logic**: Exponential backoff with configurable attempts
-- **Dual Sources**: Captures both API responses and `window.initialState` (SSR)
-- **Progress Tracking**: Real-time counters and structured logging
+- **Data Source**: Extracts from `window.initialState` (instant, reliable)
+- **Progress Tracking**: Real-time counters with detailed timing breakdowns
+- **Review Extraction**: Optional scraping from `/tab/reviews` page
+- **Performance**: ~1.4s per organization (without reviews), ~2.6s with reviews
 - **Reliability**: Browser handles authentication and session management
+
+### Extracted Data
+
+Each organization includes:
+- **Basic Info**: Name, description, address, phone, email, website
+- **Location**: Coordinates, nearest metro stations (top 3 with lines/colors)
+- **Business Details**: Schedule, rubrics, payment methods, features
+- **Organization**: Org ID, branch count, photo count
+- **Ratings**: Branch-level, organization-wide, and per-platform ratings
+- **Review Summary**: Aggregated ratings from multiple sources (2GIS, Flamp)
+- **Reviews** (optional): Full review texts with author, date, rating, likes
 
 ### Data Output
 
 Scraped data is saved in two formats:
-- **Raw data** (`data/raw/`): Complete API responses and initialState dumps
-- **Parsed data** (`data/parsed/`): Extracted fields (name, address, phone, website, rating, rubrics)
+- **Raw data** (`data/raw/`): Organization data from initialState (optimized, 93% smaller)
+- **Parsed data** (`data/parsed/`): Structured JSON with 25+ extracted fields per organization
+
+## Performance
+
+The scraper is highly optimized for speed:
+
+- **~1.4s per organization** (without reviews)
+  - Navigation: 1.1-1.6s
+  - Wait for initialState: 10-15ms
+  - Data extraction: ~95ms
+
+- **~2.6s per organization** (with reviews)
+  - Organization data: ~1.4s
+  - Review extraction: ~1.3s (up to 50 reviews)
+
+**Optimizations:**
+- No unnecessary sleep delays
+- Direct URL navigation (no back button)
+- Request blocking (images, fonts, analytics)
+- Instant data from `window.initialState`
+- 93% reduction in raw data file size
+
+**Example:** Scraping 10 organizations with reviews takes ~26 seconds total.

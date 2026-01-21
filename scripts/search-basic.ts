@@ -1,4 +1,4 @@
-// Run with: bun scripts/example.ts
+// Run with: bun scripts/search-basic.ts
 
 import { writeFile } from 'node:fs/promises';
 import { searchOrganizations } from '../src/api.js';

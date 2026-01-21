@@ -1,9 +1,13 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import type { Organization, Point } from './types.js';
 
-// Moscow default coordinates
-export const MOSCOW_VIEWPOINT_1: Point = { lon: 37.536767, lat: 55.925802 };
-export const MOSCOW_VIEWPOINT_2: Point = { lon: 37.703573, lat: 55.581639 };
+// Moscow viewpoints for search endpoint
+export const MOSCOW_SEARCH_VIEWPOINT_1: Point = { lon: 37.556366, lat: 55.926069 };
+export const MOSCOW_SEARCH_VIEWPOINT_2: Point = { lon: 37.683974, lat: 55.581373 };
+
+// Moscow viewpoints for byid endpoint
+export const MOSCOW_BYID_VIEWPOINT_1: Point = { lon: 37.536767, lat: 55.925802 };
+export const MOSCOW_BYID_VIEWPOINT_2: Point = { lon: 37.703573, lat: 55.581639 };
 
 export interface Metadata {
   fetchedAt: string;

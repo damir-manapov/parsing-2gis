@@ -5,8 +5,10 @@ import type { Organization } from '../src/types.js';
 import {
   createFileTimestamp,
   createMetadata,
-  MOSCOW_VIEWPOINT_1,
-  MOSCOW_VIEWPOINT_2,
+  MOSCOW_BYID_VIEWPOINT_1,
+  MOSCOW_BYID_VIEWPOINT_2,
+  MOSCOW_SEARCH_VIEWPOINT_1,
+  MOSCOW_SEARCH_VIEWPOINT_2,
   parseArgs,
   parseViewpoints,
   printOrganizationSummary,
@@ -54,10 +56,10 @@ async function enrichOrganizations(
 async function main() {
   const args = parseArgs(process.argv.slice(2), {
     query: 'кальян',
-    lat1: String(MOSCOW_VIEWPOINT_1.lat),
-    lon1: String(MOSCOW_VIEWPOINT_1.lon),
-    lat2: String(MOSCOW_VIEWPOINT_2.lat),
-    lon2: String(MOSCOW_VIEWPOINT_2.lon),
+    lat1: String(MOSCOW_SEARCH_VIEWPOINT_1.lat),
+    lon1: String(MOSCOW_SEARCH_VIEWPOINT_1.lon),
+    lat2: String(MOSCOW_SEARCH_VIEWPOINT_2.lat),
+    lon2: String(MOSCOW_SEARCH_VIEWPOINT_2.lon),
     delay: '500',
   });
 
@@ -80,9 +82,14 @@ async function main() {
 
   console.log(`Found ${branches.length} organizations. Enriching with contact details...\n`);
 
-  // Step 2: Fetch full details for each organization
+  // Step 2: Fetch full details for each organization (using byid viewpoints)
   const byIdStartTime = Date.now();
-  const enrichedOrgs = await enrichOrganizations(branches, delayMs, viewpoint1, viewpoint2);
+  const enrichedOrgs = await enrichOrganizations(
+    branches,
+    delayMs,
+    MOSCOW_BYID_VIEWPOINT_1,
+    MOSCOW_BYID_VIEWPOINT_2,
+  );
   const byIdResponseTime = Date.now() - byIdStartTime;
 
   console.log(`\nEnriched ${enrichedOrgs.length} organizations.\n`);

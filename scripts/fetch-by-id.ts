@@ -4,8 +4,8 @@ import { getOrganizationById } from '../src/api.js';
 import {
   createFileTimestamp,
   createMetadata,
-  MOSCOW_VIEWPOINT_1,
-  MOSCOW_VIEWPOINT_2,
+  MOSCOW_BYID_VIEWPOINT_1,
+  MOSCOW_BYID_VIEWPOINT_2,
   parseArgs,
   parseViewpoints,
   printOrganization,
@@ -17,17 +17,17 @@ async function main() {
 
   if (!id) {
     console.error(
-      'Usage: bun scripts/fetch-by-id.ts <organization-id> [--lat1 55.926069] [--lon1 37.556366] [--lat2 55.581373] [--lon2 37.683974]',
+      'Usage: bun scripts/fetch-by-id.ts <organization-id> [--lat1 55.925802] [--lon1 37.536767] [--lat2 55.581639] [--lon2 37.703573]',
     );
     console.error('Example: bun scripts/fetch-by-id.ts 70000001058714012_hash...');
     process.exit(1);
   }
 
   const args = parseArgs(process.argv.slice(3), {
-    lat1: String(MOSCOW_VIEWPOINT_1.lat),
-    lon1: String(MOSCOW_VIEWPOINT_1.lon),
-    lat2: String(MOSCOW_VIEWPOINT_2.lat),
-    lon2: String(MOSCOW_VIEWPOINT_2.lon),
+    lat1: String(MOSCOW_BYID_VIEWPOINT_1.lat),
+    lon1: String(MOSCOW_BYID_VIEWPOINT_1.lon),
+    lat2: String(MOSCOW_BYID_VIEWPOINT_2.lat),
+    lon2: String(MOSCOW_BYID_VIEWPOINT_2.lon),
   });
 
   const { viewpoint1, viewpoint2 } = parseViewpoints(args);

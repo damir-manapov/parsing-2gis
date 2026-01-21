@@ -4,8 +4,8 @@ import { search, searchOrganizations } from '../src/api.js';
 import {
   createFileTimestamp,
   createMetadata,
-  MOSCOW_VIEWPOINT_1,
-  MOSCOW_VIEWPOINT_2,
+  MOSCOW_SEARCH_VIEWPOINT_1,
+  MOSCOW_SEARCH_VIEWPOINT_2,
   parseArgs,
   parseViewpoints,
   saveParsedData,
@@ -16,10 +16,10 @@ import {
 async function main() {
   const args = parseArgs(process.argv.slice(2), {
     query: 'кальян',
-    lat1: String(MOSCOW_VIEWPOINT_1.lat),
-    lon1: String(MOSCOW_VIEWPOINT_1.lon),
-    lat2: String(MOSCOW_VIEWPOINT_2.lat),
-    lon2: String(MOSCOW_VIEWPOINT_2.lon),
+    lat1: String(MOSCOW_SEARCH_VIEWPOINT_1.lat),
+    lon1: String(MOSCOW_SEARCH_VIEWPOINT_1.lon),
+    lat2: String(MOSCOW_SEARCH_VIEWPOINT_2.lat),
+    lon2: String(MOSCOW_SEARCH_VIEWPOINT_2.lon),
   });
 
   const { viewpoint1, viewpoint2 } = parseViewpoints(args);

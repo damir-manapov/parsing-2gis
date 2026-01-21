@@ -15,7 +15,8 @@
         "noVar": "error"
       },
       "complexity": {
-        "noExcessiveCognitiveComplexity": "error"
+        "noExcessiveCognitiveComplexity": "error",
+        "useLiteralKeys": "off"
       },
       "style": {
         "useConst": "error"

@@ -18,7 +18,6 @@ import {
 // Configuration constants
 const DEFAULT_NAVIGATION_TIMEOUT = 30000;
 const DEFAULT_WAIT_TIMEOUT = 60000;
-const DEFAULT_BACK_NAVIGATION_DELAY = 500;
 
 interface MetroStation {
   name: string;
@@ -464,13 +463,6 @@ async function scrapeSingleOrganization(
 
   // Extract organization data
   const organization = extractOrganization(item, logger);
-
-  // Go back to search results
-  const backStart = Date.now();
-  await page.goBack({ waitUntil: 'domcontentloaded', timeout: DEFAULT_NAVIGATION_TIMEOUT });
-  await sleep(DEFAULT_BACK_NAVIGATION_DELAY);
-  const backTime = Date.now() - backStart;
-  logger.debug(`⏱️  Go back: ${backTime}ms`);
 
   const totalTime = Date.now() - startTime;
   logger.debug(`⏱️  Total page time: ${totalTime}ms`);

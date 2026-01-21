@@ -1,5 +1,6 @@
 // Run with: bun scripts/example.ts
 
+import { writeFile } from 'node:fs/promises';
 import { searchOrganizations } from '../src/api.js';
 
 async function main() {
@@ -30,6 +31,12 @@ async function main() {
     }
     console.log('');
   }
+
+  // Save to data folder
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `data/kalyan-moscow-${timestamp}.json`;
+  await writeFile(filename, JSON.stringify(organizations, null, 2));
+  console.log(`✅ Saved ${organizations.length} organizations to ${filename}`);
 }
 
 main().catch(console.error);

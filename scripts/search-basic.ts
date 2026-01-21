@@ -1,7 +1,7 @@
 // Run with: bun scripts/search-basic.ts
 
-import { writeFile } from 'node:fs/promises';
-import { searchOrganizations } from '../src/api.js';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { search, searchOrganizations } from '../src/api.js';
 
 async function main() {
   const moscowViewpoint1 = { lon: 37.556366, lat: 55.926069 };
@@ -9,11 +9,19 @@ async function main() {
 
   console.log('Searching for "кальян" in Moscow...\n');
 
-  const organizations = await searchOrganizations({
+  const startTime = Date.now();
+  const searchParams = {
     query: 'кальян',
     viewpoint1: moscowViewpoint1,
     viewpoint2: moscowViewpoint2,
-  });
+  };
+
+  // Get raw response
+  const rawResponse = await search(searchParams);
+  const responseTime = Date.now() - startTime;
+
+  // Get parsed organizations
+  const organizations = await searchOrganizations(searchParams);
 
   console.log(`Found ${organizations.length} organizations:\n`);
 
@@ -32,11 +40,32 @@ async function main() {
     console.log('');
   }
 
-  // Save to data folder
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `data/kalyan-moscow-${timestamp}.json`;
-  await writeFile(filename, JSON.stringify(organizations, null, 2));
-  console.log(`✅ Saved ${organizations.length} organizations to ${filename}`);
+  // Prepare metadata
+  const timestamp = new Date().toISOString();
+  const fileTimestamp = timestamp.replace(/[:.]/g, '-');
+  const metadata = {
+    fetchedAt: timestamp,
+    apiVersion: rawResponse.meta.api_version,
+    endpoint: 'search',
+    statusCode: rawResponse.meta.code,
+    query: searchParams,
+    totalResults: rawResponse.result?.total ?? 0,
+    responseTimeMs: responseTime,
+  };
+
+  // Save raw response with metadata
+  await mkdir('data/raw', { recursive: true });
+  const rawFile = `data/raw/kalyan-moscow-${fileTimestamp}.json`;
+  await writeFile(rawFile, JSON.stringify({ meta: metadata, data: rawResponse }, null, 2));
+
+  // Save parsed data with metadata
+  await mkdir('data/parsed', { recursive: true });
+  const parsedFile = `data/parsed/kalyan-moscow-${fileTimestamp}.json`;
+  await writeFile(parsedFile, JSON.stringify({ meta: metadata, data: organizations }, null, 2));
+
+  console.log(`✅ Saved ${organizations.length} organizations`);
+  console.log(`   Raw: ${rawFile}`);
+  console.log(`   Parsed: ${parsedFile}`);
 }
 
 main().catch(console.error);

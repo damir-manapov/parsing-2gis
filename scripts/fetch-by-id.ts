@@ -1,6 +1,6 @@
 // Run with: bun scripts/fetch-by-id.ts <organization-id>
 
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { getOrganizationById } from '../src/api.js';
 
 async function main() {
@@ -18,11 +18,15 @@ async function main() {
 
   console.log(`Fetching organization: ${id}\n`);
 
-  const org = await getOrganizationById({
+  const startTime = Date.now();
+  const byIdParams = {
     id,
     viewpoint1: moscowViewpoint1,
     viewpoint2: moscowViewpoint2,
-  });
+  };
+
+  const org = await getOrganizationById(byIdParams);
+  const responseTime = Date.now() - startTime;
 
   if (!org) {
     console.error('Organization not found');
@@ -49,11 +53,25 @@ async function main() {
     console.log(`Org: ${org.orgName} (${org.orgBranchCount ?? 0} branches)`);
   }
 
-  // Save to data folder
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `data/org-${org.id}-${timestamp}.json`;
-  await writeFile(filename, JSON.stringify(org, null, 2));
-  console.log(`\n✅ Saved to ${filename}`);
+  // Prepare metadata
+  const timestamp = new Date().toISOString();
+  const fileTimestamp = timestamp.replace(/[:.]/g, '-');
+  const metadata = {
+    fetchedAt: timestamp,
+    apiVersion: '3.0.x', // We don't have access to raw response here
+    endpoint: 'byid',
+    statusCode: 200,
+    query: byIdParams,
+    responseTimeMs: responseTime,
+  };
+
+  // Save parsed data with metadata (no raw data available from getOrganizationById)
+  await mkdir('data/parsed', { recursive: true });
+  const parsedFile = `data/parsed/org-${org.id}-${fileTimestamp}.json`;
+  await writeFile(parsedFile, JSON.stringify({ meta: metadata, data: org }, null, 2));
+
+  console.log(`\n✅ Saved to ${parsedFile}`);
+  console.log('Note: Raw response not available (getOrganizationById returns parsed data only)');
 }
 
 main().catch(console.error);

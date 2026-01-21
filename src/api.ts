@@ -10,6 +10,15 @@ import type {
 
 const API_BASE_URL = 'https://catalog.api.2gis.ru/3.0/items';
 
+// API Constants
+const API_PAGE_SIZE = 12; // Fixed - API rejects other values
+const SEARCH_R_VALUE = 4293796187; // Fixed r value for search endpoint
+const BYID_R_VALUE = 1138174652; // Fixed r value for byid endpoint
+const DEFAULT_CONTEXT_RUBRIC_ID = '110357'; // Default context rubric (hookah bars)
+const SESSION_ID = 'e124f6f4-7b10-46bc-96f1-7c9c5e3857a6';
+const USER_HASH = '7090465926170095974';
+const USER_ID = 'f1ae1efb-d025-49b8-a2c8-e27d110e8573';
+
 function getApiKey(): string {
   const key = process.env['TWOGIS_API_KEY'];
   if (!key) {
@@ -215,56 +224,16 @@ const DEFAULT_TYPES = [
   'kilometer_road_sign',
 ].join(',');
 
-function generateSessionId(): string {
-  // Using a fixed session ID format that the API accepts
-  return 'e124f6f4-7b10-46bc-96f1-7c9c5e3857a6';
-}
-
-function generateUserHash(): string {
-  // Using a fixed user hash that the API accepts
-  return '7090465926170095974';
-}
-
-function generateUserId(): string {
-  return 'f1ae1efb-d025-49b8-a2c8-e27d110e8573';
-}
-
-export function buildSearchUrl(params: SearchParams): string {
-  const { query, viewpoint1, viewpoint2, page = 1, locale = 'ru_RU' } = params;
-  // Note: pageSize is ignored - API only accepts page_size=12
-
-  const sessionId = generateSessionId();
-  const userHash = generateUserHash();
-  const userId = generateUserId();
-  const r = 4293796187; // Fixed r value from working request
-
-  // Build URL manually to avoid encoding commas in fields and type parameters
-  const queryEncoded = encodeURIComponent(query);
-  const urlParts = [
-    `key=${getApiKey()}`,
-    `q=${queryEncoded}`,
-    `fields=${DEFAULT_FIELDS}`,
-    `type=${DEFAULT_TYPES}`,
-    'page_size=12', // Fixed - API rejects other values
-    `page=${page}`,
-    `locale=${locale}`,
-    'allow_deleted=true',
-    'search_device_type=desktop',
-    `search_user_hash=${userHash}`,
+function buildCommonUrlParams(viewpoint1: Point, viewpoint2: Point): string[] {
+  return [
     `viewpoint1=${viewpoint1.lon},${viewpoint1.lat}`,
     `viewpoint2=${viewpoint2.lon},${viewpoint2.lat}`,
-    `stat%5Bsid%5D=${sessionId}`,
-    `stat%5Buser%5D=${userId}`,
-    'shv=2026-01-21-17',
-    `r=${r}`,
+    `stat%5Bsid%5D=${SESSION_ID}`,
+    `stat%5Buser%5D=${USER_ID}`,
   ];
-
-  return `${API_BASE_URL}?${urlParts.join('&')}`;
 }
 
-export async function search(params: SearchParams): Promise<ApiResponse> {
-  const url = buildSearchUrl(params);
-
+async function makeFetchRequest(url: string): Promise<ApiResponse> {
   const response = await fetch(url, {
     headers: {
       'user-agent': USER_AGENT,
@@ -291,6 +260,34 @@ export async function search(params: SearchParams): Promise<ApiResponse> {
   return data;
 }
 
+export function buildSearchUrl(params: SearchParams): string {
+  const { query, viewpoint1, viewpoint2, page = 1, locale = 'ru_RU' } = params;
+
+  const queryEncoded = encodeURIComponent(query);
+  const urlParts = [
+    `key=${getApiKey()}`,
+    `q=${queryEncoded}`,
+    `fields=${DEFAULT_FIELDS}`,
+    `type=${DEFAULT_TYPES}`,
+    `page_size=${API_PAGE_SIZE}`,
+    `page=${page}`,
+    `locale=${locale}`,
+    'allow_deleted=true',
+    'search_device_type=desktop',
+    `search_user_hash=${USER_HASH}`,
+    ...buildCommonUrlParams(viewpoint1, viewpoint2),
+    'shv=2026-01-21-17',
+    `r=${SEARCH_R_VALUE}`,
+  ];
+
+  return `${API_BASE_URL}?${urlParts.join('&')}`;
+}
+
+export async function search(params: SearchParams): Promise<ApiResponse> {
+  const url = buildSearchUrl(params);
+  return makeFetchRequest(url);
+}
+
 const DAYS_OF_WEEK: DayOfWeek[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function parseSchedule(
@@ -313,12 +310,16 @@ function parseSchedule(
   return Object.keys(schedule).length > 0 ? schedule : undefined;
 }
 
-export function parseItem(item: ApiItem): Organization {
-  const city = item.adm_div?.find((d) => d.type === 'city')?.name;
-  const district = item.adm_div?.find((d) => d.type === 'district')?.name;
+interface ContactInfo {
+  phone: string | undefined;
+  website: string | undefined;
+  email: string | undefined;
+  telegram: string | undefined;
+  vkontakte: string | undefined;
+}
 
+function parseContacts(item: ApiItem): ContactInfo {
   const allContacts = item.contact_groups?.flatMap((g) => g.contacts ?? []) ?? [];
-
   const findContact = (type: string) => allContacts.find((c) => c.type === type);
 
   const phone = findContact('phone')?.value;
@@ -330,6 +331,14 @@ export function parseItem(item: ApiItem): Organization {
   const vkontakteContact = findContact('vkontakte');
   const vkontakte = vkontakteContact?.url ?? vkontakteContact?.value;
 
+  return { phone, website, email, telegram, vkontakte };
+}
+
+export function parseItem(item: ApiItem): Organization {
+  const city = item.adm_div?.find((d) => d.type === 'city')?.name;
+  const district = item.adm_div?.find((d) => d.type === 'district')?.name;
+  const contacts = parseContacts(item);
+
   return {
     id: item.id,
     name: item.name,
@@ -338,11 +347,7 @@ export function parseItem(item: ApiItem): Organization {
     city,
     district,
     point: item.point ?? { lat: 0, lon: 0 },
-    phone,
-    website,
-    email,
-    telegram,
-    vkontakte,
+    ...contacts,
     schedule: parseSchedule(item.schedule),
     rubrics:
       item.rubrics?.map((r) => ({
@@ -377,8 +382,7 @@ export async function searchAllPages(params: SearchParams, maxPages = 10): Promi
     const orgs = items.filter((item) => item.type === 'branch').map(parseItem);
     allOrgs.push(...orgs);
 
-    // API always returns 12 items per page
-    if (items.length < 12) break;
+    if (items.length < API_PAGE_SIZE) break;
 
     page++;
   }
@@ -396,17 +400,19 @@ export interface ByIdParams {
 }
 
 export function buildByIdUrl(params: ByIdParams): string {
-  const { id, viewpoint1, viewpoint2, locale = 'ru_RU', contextRubricId = '110357' } = params;
+  const {
+    id,
+    viewpoint1,
+    viewpoint2,
+    locale = 'ru_RU',
+    contextRubricId = DEFAULT_CONTEXT_RUBRIC_ID,
+  } = params;
 
-  const sessionId = generateSessionId();
-  const userId = generateUserId();
-  const r = 1138174652; // Fixed value required for API v3
   const dateStr = new Date().toISOString().split('T')[0];
   if (!dateStr) throw new Error('Invalid date');
-  const today = dateStr.replace(/-/g, '-');
-  const shv = `${today.slice(0, 4)}-${today.slice(5, 7)}-${today.slice(8, 10)}-17`;
+  const shv = `${dateStr.slice(0, 4)}-${dateStr.slice(5, 7)}-${dateStr.slice(8, 10)}-17`;
 
-  // search_ctx format required for API v3: 0:r=RUBRIC_ID;1:a=ID1;2:a=ID2;3:r=RUBRIC_ID2
+  // search_ctx format required for API v3
   const searchCtx = `0:r%3D${contextRubricId}%3B1:a%3D70000201006757123%3B2:a%3D70000201006755194%3B3:r%3D367`;
 
   const urlParts = [
@@ -416,12 +422,9 @@ export function buildByIdUrl(params: ByIdParams): string {
     `fields=${BYID_FIELDS}`,
     `search_ctx=${searchCtx}`,
     `context_rubrics%5B0%5D=${contextRubricId}`,
-    `viewpoint1=${viewpoint1.lon},${viewpoint1.lat}`,
-    `viewpoint2=${viewpoint2.lon},${viewpoint2.lat}`,
-    `stat%5Bsid%5D=${sessionId}`,
-    `stat%5Buser%5D=${userId}`,
+    ...buildCommonUrlParams(viewpoint1, viewpoint2),
     `shv=${shv}`,
-    `r=${r}`,
+    `r=${BYID_R_VALUE}`,
   ];
 
   return `${API_BASE_URL}/byid?${urlParts.join('&')}`;
@@ -429,29 +432,7 @@ export function buildByIdUrl(params: ByIdParams): string {
 
 export async function getOrganizationById(params: ByIdParams): Promise<Organization | undefined> {
   const url = buildByIdUrl(params);
-
-  const response = await fetch(url, {
-    headers: {
-      'user-agent': USER_AGENT,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP error: ${response.status}`);
-  }
-
-  const data = (await response.json()) as ApiResponse;
-
-  const apiVersion = data.meta.api_version ?? 'unknown';
-  if (!apiVersion.startsWith('3.')) {
-    console.warn(`⚠️  API version ${apiVersion} detected (expected 3.x). URL may be malformed.`);
-  }
-
-  if (data.meta.code !== 200) {
-    throw new Error(
-      `API error: ${data.meta.error?.message ?? 'Unknown error'} (api_version: ${apiVersion})`,
-    );
-  }
+  const data = await makeFetchRequest(url);
 
   const item = data.result?.items[0];
   if (!item) return undefined;

@@ -31,6 +31,20 @@ interface Coordinates {
   lon: number;
 }
 
+interface Review {
+  id: string;
+  text: string;
+  rating: number;
+  dateCreated: string;
+  dateEdited?: string;
+  author?: string;
+  authorId?: string;
+  commentsCount?: number;
+  source?: string;
+  likes?: number;
+  dislikes?: number;
+}
+
 interface ScrapedOrganization {
   name: string;
   description?: string;
@@ -76,6 +90,7 @@ interface ScrapedOrganization {
   hasPhotos?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  reviews?: Review[];
 }
 
 interface ScraperOptions {
@@ -84,6 +99,8 @@ interface ScraperOptions {
   maxRecords: number;
   maxRetries: number;
   headless: boolean;
+  includeReviews: boolean;
+  maxReviewsPerOrg: number;
 }
 
 interface DataExtractionResult {
@@ -457,11 +474,130 @@ async function extractDataFromPage(
   return null;
 }
 
+// Scrape reviews from organization reviews tab
+// Note: Currently extracts up to 50 reviews from initialState (2GIS pagination limit)
+// Pagination beyond 50 reviews would require additional scrolling/button clicking logic
+async function scrapeReviews(
+  page: Page,
+  firmId: string,
+  maxReviews: number,
+  logger: Logger,
+): Promise<Review[]> {
+  const reviews: Review[] = [];
+
+  try {
+    const reviewsUrl = `https://2gis.ru/moscow/firm/${firmId}/tab/reviews`;
+    logger.debug(`Navigating to reviews: ${reviewsUrl}`);
+
+    await page.goto(reviewsUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: DEFAULT_NAVIGATION_TIMEOUT,
+    });
+
+    // Wait for initialState to be updated with reviews
+    await page.waitForFunction(() => typeof (window as any).initialState !== 'undefined', {
+      timeout: 5000,
+    });
+
+    // Extract reviews from initialState
+    let extractedReviews = await page.evaluate(() => {
+      const state = (window as any).initialState;
+      if (!state?.data?.review) return [];
+
+      const reviewData = state.data.review;
+      const allReviews = [];
+
+      for (const [id, reviewObj] of Object.entries(reviewData)) {
+        const review = (reviewObj as any)?.data;
+        if (review) {
+          allReviews.push({
+            id,
+            text: review.text || '',
+            rating: review.rating || 0,
+            dateCreated: review.date_created || '',
+            dateEdited: review.date_edited,
+            author: review.user?.name,
+            authorId: review.user?.id,
+            commentsCount: review.comments_count,
+            source: review.source,
+            likes: review.likes_count,
+            dislikes: review.dislikes_count,
+          });
+        }
+      }
+
+      return allReviews;
+    });
+
+    reviews.push(...extractedReviews.slice(0, maxReviews));
+
+    // Handle pagination if we need more reviews
+    while (reviews.length < maxReviews && reviews.length < extractedReviews.length) {
+      // Check if there's a "Load more" button or pagination
+      const hasMoreButton = await page.$(
+        'button:has-text("Показать ещё"), button:has-text("Загрузить ещё")',
+      );
+
+      if (hasMoreButton) {
+        logger.debug(`Loading more reviews... (current: ${reviews.length})`);
+        await hasMoreButton.click();
+        await page.waitForTimeout(1000);
+
+        // Re-extract reviews after loading more
+        extractedReviews = await page.evaluate(() => {
+          const state = (window as any).initialState;
+          if (!state?.data?.review) return [];
+
+          const reviewData = state.data.review;
+          const allReviews = [];
+
+          for (const [id, reviewObj] of Object.entries(reviewData)) {
+            const review = (reviewObj as any)?.data;
+            if (review) {
+              allReviews.push({
+                id,
+                text: review.text || '',
+                rating: review.rating || 0,
+                dateCreated: review.date_created || '',
+                dateEdited: review.date_edited,
+                author: review.user?.name,
+                authorId: review.user?.id,
+                commentsCount: review.comments_count,
+                source: review.source,
+                likes: review.likes_count,
+                dislikes: review.dislikes_count,
+              });
+            }
+          }
+
+          return allReviews;
+        });
+
+        // Update reviews with newly loaded ones (avoiding duplicates)
+        const existingIds = new Set(reviews.map((r) => r.id));
+        const newReviews = extractedReviews.filter((r) => !existingIds.has(r.id));
+        reviews.push(...newReviews.slice(0, maxReviews - reviews.length));
+      } else {
+        // No more reviews to load
+        break;
+      }
+    }
+
+    logger.debug(`Extracted ${reviews.length} reviews`);
+  } catch (e) {
+    const errorMsg = e instanceof Error ? e.message : 'Unknown error';
+    logger.warn(`Failed to extract reviews: ${errorMsg}`);
+  }
+
+  return reviews;
+}
+
 // Scrape a single organization page
 async function scrapeSingleOrganization(
   page: Page,
   url: string,
   logger: Logger,
+  options: ScraperOptions,
 ): Promise<{ organization: ScrapedOrganization; rawData: any } | null> {
   const startTime = Date.now();
 
@@ -511,6 +647,15 @@ async function scrapeSingleOrganization(
   // Extract organization data
   const organization = extractOrganization(item, logger);
 
+  // Scrape reviews if requested
+  if (options.includeReviews && item.id) {
+    const reviewsStart = Date.now();
+    const reviews = await scrapeReviews(page, item.id, options.maxReviewsPerOrg, logger);
+    const reviewsTime = Date.now() - reviewsStart;
+    logger.debug(`⏱️  Reviews extraction: ${reviewsTime}ms (${reviews.length} reviews)`);
+    organization.reviews = reviews;
+  }
+
   const totalTime = Date.now() - startTime;
   logger.debug(`⏱️  Total page time: ${totalTime}ms`);
 
@@ -522,7 +667,7 @@ async function scrapeSearchResults(
 ): Promise<{ organizations: ScrapedOrganization[]; rawData: any[] }> {
   const logger = new Logger();
   logger.info(
-    `Starting scraper with options: maxRecords=${options.maxRecords}, delay=${options.delayMs}ms, retries=${options.maxRetries}, headless=${options.headless}`,
+    `Starting scraper with options: maxRecords=${options.maxRecords}, delay=${options.delayMs}ms, retries=${options.maxRetries}, headless=${options.headless}${options.includeReviews ? `, reviews=${options.maxReviewsPerOrg}` : ''}`,
   );
 
   const browser = await chromium.launch({ headless: options.headless });
@@ -603,7 +748,7 @@ async function scrapeSearchResults(
 
       // Use retry wrapper for each firm page
       const result = await withRetry(
-        async () => scrapeSingleOrganization(page, url, logger),
+        async () => scrapeSingleOrganization(page, url, logger, options),
         options.maxRetries,
         logger,
         'Scraping organization',
@@ -637,6 +782,8 @@ async function main() {
     'max-records': '50',
     'max-retries': '3',
     headless: 'true',
+    'include-reviews': 'false',
+    'max-reviews': '100',
   });
 
   const options: ScraperOptions = {
@@ -645,12 +792,14 @@ async function main() {
     maxRecords: Number(args['max-records']),
     maxRetries: Number(args['max-retries']),
     headless: args.headless === 'true',
+    includeReviews: args['include-reviews'] === 'true',
+    maxReviewsPerOrg: Number(args['max-reviews']),
   };
 
   const logger = new Logger();
   logger.info(`Scraping 2GIS for "${options.query}" in Moscow`);
   logger.info(
-    `Configuration: delay=${options.delayMs}ms, maxRecords=${options.maxRecords}, retries=${options.maxRetries}`,
+    `Configuration: delay=${options.delayMs}ms, maxRecords=${options.maxRecords}, retries=${options.maxRetries}${options.includeReviews ? `, reviews=${options.maxReviewsPerOrg}` : ''}`,
   );
 
   const startTime = Date.now();

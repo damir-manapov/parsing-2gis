@@ -1,5 +1,4 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import type { Organization, Point } from './types.js';
 
 // Logger utility with timestamps
 export class Logger {
@@ -38,14 +37,6 @@ export class Logger {
     console.log(`${this.elapsed()} [${current}/${total}] ${message}`);
   }
 }
-
-// Moscow viewpoints for search endpoint
-export const MOSCOW_SEARCH_VIEWPOINT_1: Point = { lon: 37.556366, lat: 55.926069 };
-export const MOSCOW_SEARCH_VIEWPOINT_2: Point = { lon: 37.683974, lat: 55.581373 };
-
-// Moscow viewpoints for byid endpoint
-export const MOSCOW_BYID_VIEWPOINT_1: Point = { lon: 37.536767, lat: 55.925802 };
-export const MOSCOW_BYID_VIEWPOINT_2: Point = { lon: 37.703573, lat: 55.581639 };
 
 export interface Metadata {
   fetchedAt: string;
@@ -87,16 +78,6 @@ export async function saveParsedData(
   return filePath;
 }
 
-export function printOrganizationSummary(organizations: Organization[]): void {
-  console.log('\n=== Summary ===');
-  console.log(`Total: ${organizations.length}`);
-  console.log(`With phone: ${organizations.filter((o) => o.phone).length}`);
-  console.log(`With website: ${organizations.filter((o) => o.website).length}`);
-  console.log(`With email: ${organizations.filter((o) => o.email).length}`);
-  console.log(`With telegram: ${organizations.filter((o) => o.telegram).length}`);
-  console.log(`With VK: ${organizations.filter((o) => o.vkontakte).length}`);
-}
-
 export function parseArgs<T extends string>(
   args: string[],
   defaults: Record<T, string>,
@@ -116,16 +97,6 @@ export function parseArgs<T extends string>(
   }
 
   return result;
-}
-
-export function parseViewpoints(args: { lat1: string; lon1: string; lat2: string; lon2: string }): {
-  viewpoint1: Point;
-  viewpoint2: Point;
-} {
-  return {
-    viewpoint1: { lon: Number(args.lon1), lat: Number(args.lat1) },
-    viewpoint2: { lon: Number(args.lon2), lat: Number(args.lat2) },
-  };
 }
 
 export function slugify(text: string): string {
@@ -166,26 +137,4 @@ export function createMetadata(params: CreateMetadataParams): Metadata {
     fetchedAt: new Date().toISOString(),
     ...params,
   };
-}
-
-export function printOrganization(org: Organization): void {
-  console.log('=== Organization ===');
-  console.log(`Name: ${org.name}`);
-  console.log(`Address: ${org.address}${org.addressComment ? ` (${org.addressComment})` : ''}`);
-  console.log(`City: ${org.city ?? 'N/A'}, District: ${org.district ?? 'N/A'}`);
-  console.log(`Coordinates: ${org.point.lat}, ${org.point.lon}`);
-  console.log(`Rating: ${org.rating ?? 'N/A'} (${org.reviewCount ?? 0} reviews)`);
-  console.log(`Rubrics: ${org.rubrics.map((r) => r.name).join(', ')}`);
-
-  console.log('\n=== Contacts ===');
-  console.log(`Phone: ${org.phone ?? '-'}`);
-  console.log(`Website: ${org.website ?? '-'}`);
-  console.log(`Email: ${org.email ?? '-'}`);
-  console.log(`Telegram: ${org.telegram ?? '-'}`);
-  console.log(`VK: ${org.vkontakte ?? '-'}`);
-
-  if (org.orgName) {
-    console.log('\n=== Organization Info ===');
-    console.log(`Org: ${org.orgName} (${org.orgBranchCount ?? 0} branches)`);
-  }
 }

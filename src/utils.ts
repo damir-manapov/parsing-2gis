@@ -1,6 +1,44 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import type { Organization, Point } from './types.js';
 
+// Logger utility with timestamps
+export class Logger {
+  private startTime: number;
+
+  constructor() {
+    this.startTime = Date.now();
+  }
+
+  private elapsed(): string {
+    const ms = Date.now() - this.startTime;
+    return `[${(ms / 1000).toFixed(1)}s]`;
+  }
+
+  info(message: string) {
+    console.log(`${this.elapsed()} ℹ️  ${message}`);
+  }
+
+  success(message: string) {
+    console.log(`${this.elapsed()} ✓ ${message}`);
+  }
+
+  error(message: string) {
+    console.log(`${this.elapsed()} ✗ ${message}`);
+  }
+
+  warn(message: string) {
+    console.log(`${this.elapsed()} ⚠️  ${message}`);
+  }
+
+  debug(message: string) {
+    console.log(`${this.elapsed()} 🔍 ${message}`);
+  }
+
+  progress(current: number, total: number, message: string) {
+    console.log(`${this.elapsed()} [${current}/${total}] ${message}`);
+  }
+}
+
 // Moscow viewpoints for search endpoint
 export const MOSCOW_SEARCH_VIEWPOINT_1: Point = { lon: 37.556366, lat: 55.926069 };
 export const MOSCOW_SEARCH_VIEWPOINT_2: Point = { lon: 37.683974, lat: 55.581373 };
@@ -92,6 +130,22 @@ export function parseViewpoints(args: { lat1: string; lon1: string; lat2: string
 
 export function slugify(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+
+export async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Extract contact from 2GIS item data
+// biome-ignore lint/suspicious/noExplicitAny: 2GIS API responses are untyped
+export function findContact(item: any, contactType: string): string | undefined {
+  return (
+    item.contact_groups
+      // biome-ignore lint/suspicious/noExplicitAny: 2GIS API responses are untyped
+      ?.find((g: any) => g.contacts?.find((c: any) => c.type === contactType))
+      // biome-ignore lint/suspicious/noExplicitAny: 2GIS API responses are untyped
+      ?.contacts?.find((c: any) => c.type === contactType)?.value
+  );
 }
 
 export interface CreateMetadataParams {

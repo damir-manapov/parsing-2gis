@@ -6,9 +6,12 @@ import { chromium } from 'playwright';
 import {
   createFileTimestamp,
   createMetadata,
+  findContact,
+  Logger,
   parseArgs,
   saveParsedData,
   saveRawData,
+  sleep,
   slugify,
 } from '../src/utils.js';
 
@@ -29,46 +32,9 @@ interface ScraperOptions {
   maxRetries: number;
 }
 
-async function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// Logger utility
-class Logger {
-  private startTime: number;
-
-  constructor() {
-    this.startTime = Date.now();
-  }
-
-  private elapsed(): string {
-    const ms = Date.now() - this.startTime;
-    return `[${(ms / 1000).toFixed(1)}s]`;
-  }
-
-  info(message: string) {
-    console.log(`${this.elapsed()} ℹ️  ${message}`);
-  }
-
-  success(message: string) {
-    console.log(`${this.elapsed()} ✓ ${message}`);
-  }
-
-  error(message: string) {
-    console.log(`${this.elapsed()} ✗ ${message}`);
-  }
-
-  warn(message: string) {
-    console.log(`${this.elapsed()} ⚠️  ${message}`);
-  }
-
-  debug(message: string) {
-    console.log(`${this.elapsed()} 🔍 ${message}`);
-  }
-
-  progress(current: number, total: number, message: string) {
-    console.log(`${this.elapsed()} [${current}/${total}] ${message}`);
-  }
+interface DataExtractionResult {
+  item: any;
+  source: 'api' | 'initialState';
 }
 
 // Block unnecessary resources to improve performance
@@ -123,6 +89,105 @@ async function withRetry<T>(
     }
   }
   return null;
+}
+
+// Extract organization data from 2GIS item
+function extractOrganization(item: any): ScrapedOrganization {
+  const phone = findContact(item, 'phone');
+  const website = findContact(item, 'website');
+
+  return {
+    name: item.name ?? '',
+    address: item.address_name ?? '',
+    ...(phone !== undefined && { phone }),
+    ...(website !== undefined && { website }),
+    rating: item.reviews?.rating,
+    reviewCount: item.reviews?.general_rating_count,
+    rubrics: item.rubrics?.map((r: any) => r.name) ?? [],
+  };
+}
+
+// Extract data from page (API response or initialState)
+async function extractDataFromPage(
+  page: Page,
+  capturedResponses: any[],
+  logger: Logger,
+): Promise<DataExtractionResult | null> {
+  // Try API response first
+  if (capturedResponses.length > 0) {
+    const apiData = capturedResponses[0];
+    const item = apiData.result?.items?.[0];
+    if (item) {
+      logger.debug('Using API response');
+      return { item, source: 'api' };
+    }
+  }
+
+  // Fallback to initialState
+  try {
+    const initialState = await page.evaluate(() => (window as any).initialState);
+    const profileData = initialState?.data?.entity?.profile;
+    if (profileData) {
+      const profiles = Object.values(profileData);
+      if (profiles.length > 0) {
+        const item = (profiles[0] as any)?.data;
+        if (item) {
+          logger.debug('Using initialState');
+          return { item, source: 'initialState' };
+        }
+      }
+    }
+  } catch (e) {
+    logger.warn(`Failed to extract initialState: ${e}`);
+  }
+
+  return null;
+}
+
+// Scrape a single organization page
+async function scrapeSingleOrganization(
+  page: Page,
+  url: string,
+  capturedResponses: any[],
+  options: ScraperOptions,
+  logger: Logger,
+): Promise<{ organization: ScrapedOrganization; rawData: any } | null> {
+  // Clear previous responses
+  capturedResponses.length = 0;
+
+  // Navigate to firm page
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+  // Wait for data with configurable delay
+  await sleep(options.delayMs);
+
+  // Extract data from page
+  const extraction = await extractDataFromPage(page, capturedResponses, logger);
+
+  if (!extraction) {
+    throw new Error('No data found for this organization');
+  }
+
+  const { item, source } = extraction;
+
+  // Build raw data entry
+  const rawData = {
+    source,
+    url,
+    data:
+      source === 'api'
+        ? capturedResponses[0]
+        : await page.evaluate(() => (window as any).initialState),
+  };
+
+  // Extract organization data
+  const organization = extractOrganization(item);
+
+  // Go back to search results
+  await page.goBack({ waitUntil: 'domcontentloaded', timeout: 30000 });
+  await sleep(500);
+
+  return { organization, rawData };
 }
 
 async function scrapeSearchResults(
@@ -232,76 +297,18 @@ async function scrapeSearchResults(
 
       // Use retry wrapper for each firm page
       const result = await withRetry(
-        async () => {
-          // Clear previous responses
-          capturedResponses.length = 0;
-
-          // Navigate to firm page
-          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-          // Wait for data with configurable delay
-          await sleep(options.delayMs);
-
-          let item: any = null;
-
-          // Try API response first
-          if (capturedResponses.length > 0) {
-            const apiData = capturedResponses[0];
-            item = apiData.result?.items?.[0];
-            rawData.push({ source: 'api', url, data: apiData });
-            logger.debug('Using API response');
-          } else {
-            // Fallback to initialState
-            try {
-              const initialState = await page.evaluate(() => (window as any).initialState);
-              const profileData = initialState?.data?.entity?.profile;
-              if (profileData) {
-                const profiles = Object.values(profileData);
-                if (profiles.length > 0) {
-                  item = (profiles[0] as any)?.data;
-                  rawData.push({ source: 'initialState', url, data: initialState });
-                  logger.debug('Using initialState');
-                }
-              }
-            } catch (e) {
-              throw new Error(`Failed to extract data: ${e}`);
-            }
-          }
-
-          if (!item) {
-            throw new Error('No data found for this organization');
-          }
-
-          // Extract organization data
-          const org: ScrapedOrganization = {
-            name: item.name ?? '',
-            address: item.address_name ?? '',
-            phone: item.contact_groups
-              ?.find((g: any) => g.contacts?.find((c: any) => c.type === 'phone'))
-              ?.contacts?.find((c: any) => c.type === 'phone')?.value,
-            website: item.contact_groups
-              ?.find((g: any) => g.contacts?.find((c: any) => c.type === 'website'))
-              ?.contacts?.find((c: any) => c.type === 'website')?.value,
-            rating: item.reviews?.rating,
-            reviewCount: item.reviews?.general_rating_count,
-            rubrics: item.rubrics?.map((r: any) => r.name) ?? [],
-          };
-
-          organizations.push(org);
-          logger.success(`${org.name} | Phone: ${org.phone ?? '-'} | Rating: ${org.rating ?? '-'}`);
-
-          // Go back to search results
-          await page.goBack({ waitUntil: 'domcontentloaded', timeout: 30000 });
-          await sleep(500);
-
-          return org;
-        },
+        async () => scrapeSingleOrganization(page, url, capturedResponses, options, logger),
         options.maxRetries,
         logger,
-        `Scraping organization`,
+        'Scraping organization',
       );
 
       if (result) {
+        organizations.push(result.organization);
+        rawData.push(result.rawData);
+        logger.success(
+          `${result.organization.name} | Phone: ${result.organization.phone ?? '-'} | Rating: ${result.organization.rating ?? '-'}`,
+        );
         successCount++;
       } else {
         failureCount++;

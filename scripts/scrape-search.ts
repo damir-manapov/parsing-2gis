@@ -76,6 +76,7 @@ interface ScraperOptions {
 interface DataExtractionResult {
   item: any;
   source: 'api' | 'initialState';
+  fullData?: any; // Store the full API response or initialState
 }
 
 // Block unnecessary resources to improve performance
@@ -396,7 +397,7 @@ async function extractDataFromPage(
     const item = apiData.result?.items?.[0];
     if (item) {
       logger.debug('Using API response');
-      return { item, source: 'api' };
+      return { item, source: 'api', fullData: apiData };
     }
   }
 
@@ -410,7 +411,7 @@ async function extractDataFromPage(
         const item = (profiles[0] as any)?.data;
         if (item) {
           logger.debug('Using initialState');
-          return { item, source: 'initialState' };
+          return { item, source: 'initialState', fullData: initialState };
         }
       }
     }
@@ -446,22 +447,21 @@ async function scrapeSingleOrganization(
     throw new Error('No data found for this organization');
   }
 
-  const { item, source } = extraction;
+  const { item, source, fullData } = extraction;
 
   // Build raw data entry - save only organization-related data
   let rawDataContent: any;
   if (source === 'api') {
     // For API responses, save the entire response (already filtered)
-    rawDataContent = capturedResponses[0];
+    rawDataContent = fullData;
   } else {
     // For initialState, extract only the organization data to save space
-    const fullState = await page.evaluate(() => (window as any).initialState);
-    const profileData = fullState?.data?.entity?.profile;
+    const profileData = fullData?.data?.entity?.profile;
 
     if (profileData) {
       // Save just the profile data, not the entire initialState
       rawDataContent = {
-        meta: fullState?.meta,
+        meta: fullData?.meta,
         result: {
           items: [item],
         },
@@ -469,7 +469,7 @@ async function scrapeSingleOrganization(
     } else {
       // Fallback: save full state if structure is unexpected
       logger.warn('Unexpected initialState structure, saving full state');
-      rawDataContent = fullState;
+      rawDataContent = fullData;
     }
   }
 

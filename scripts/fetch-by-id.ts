@@ -8,13 +8,21 @@ async function main() {
 
   if (!id) {
     console.error('Usage: bun scripts/fetch-by-id.ts <organization-id>');
-    console.error('Example: bun scripts/fetch-by-id.ts 70000001058714012');
+    console.error('Example: bun scripts/fetch-by-id.ts 70000001058714012_hash...');
     process.exit(1);
   }
 
+  // Moscow viewport (default)
+  const moscowViewpoint1 = { lon: 37.536767, lat: 55.925802 };
+  const moscowViewpoint2 = { lon: 37.703573, lat: 55.581639 };
+
   console.log(`Fetching organization: ${id}\n`);
 
-  const org = await getOrganizationById({ id });
+  const org = await getOrganizationById({
+    id,
+    viewpoint1: moscowViewpoint1,
+    viewpoint2: moscowViewpoint2,
+  });
 
   if (!org) {
     console.error('Organization not found');

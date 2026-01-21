@@ -3,6 +3,7 @@ import type {
   ApiResponse,
   DayOfWeek,
   Organization,
+  Point,
   Schedule,
   SearchParams,
 } from './types.js';
@@ -96,36 +97,98 @@ const DEFAULT_FIELDS = [
   'items.summary',
 ].join(',');
 
+// Full fields list required for API v3 (otherwise falls back to v2 which blocks the key)
 const BYID_FIELDS = [
   'items.locale',
   'items.flags',
+  'items.search_attributes.detection_type',
+  'search_attributes',
+  'items.search_attributes.relevance',
   'items.adm_div',
   'items.city_alias',
   'items.region_id',
   'items.segment_id',
   'items.reviews',
   'items.point',
+  'request_type',
+  'context_rubrics',
+  'query_context',
   'items.links',
   'items.name_ex',
+  'items.name_back',
   'items.org',
   'items.group',
   'items.dates',
   'items.external_content',
   'items.contact_groups',
   'items.comment',
+  'items.ads.options',
+  'items.email_for_sending.allowed',
+  'items.stat',
+  'items.stop_factors',
   'items.description',
+  'items.geometry.centroid',
+  'items.geometry.selection',
+  'items.geometry.style',
   'items.timezone_offset',
+  'items.context',
+  'items.level_count',
   'items.address',
+  'items.is_paid',
+  'items.access',
+  'items.access_comment',
+  'items.for_trucks',
+  'items.is_incentive',
+  'items.paving_type',
+  'items.capacity',
   'items.schedule',
   'items.schedule_special',
+  'items.floors',
+  'items.floor_id',
+  'items.floor_plans',
+  'ad',
   'items.rubrics',
+  'items.routes',
+  'items.platforms',
+  'items.directions',
+  'items.barrier',
   'items.reply_rate',
+  'items.purpose',
+  'items.purpose_code',
   'items.attribute_groups',
+  'items.route_logo',
   'items.has_goods',
+  'items.has_apartments_info',
+  'items.has_pinned_goods',
+  'items.has_realty',
+  'items.has_otello_stories',
+  'items.has_exchange',
   'items.has_payments',
+  'items.has_dynamic_congestion',
+  'items.is_promoted',
+  'items.congestion',
   'items.delivery',
   'items.order_with_cart',
+  'search_type',
+  'items.has_discount',
   'items.metarubrics',
+  'items.detailed_subtype',
+  'items.temporary_unavailable_atm_services',
+  'items.poi_category',
+  'items.has_ads_model',
+  'items.vacancies',
+  'items.structure_info.material',
+  'items.structure_info.floor_type',
+  'items.structure_info.gas_type',
+  'items.structure_info.year_of_construction',
+  'items.structure_info.elevators_count',
+  'items.structure_info.is_in_emergency_state',
+  'items.structure_info.project_type',
+  'items.has_otello_hotels',
+  'items.ski_lift',
+  'items.ski_track',
+  'items.inactive',
+  'items.links', // REQUIRED: duplicated at end to trigger API v3 (without it, falls back to v2)
 ].join(',');
 
 const DEFAULT_TYPES = [
@@ -214,8 +277,15 @@ export async function search(params: SearchParams): Promise<ApiResponse> {
 
   const data = (await response.json()) as ApiResponse;
 
+  const apiVersion = data.meta.api_version ?? 'unknown';
+  if (!apiVersion.startsWith('3.')) {
+    console.warn(`⚠️  API version ${apiVersion} detected (expected 3.x). URL may be malformed.`);
+  }
+
   if (data.meta.code !== 200) {
-    throw new Error(`API error: ${data.meta.error?.message ?? 'Unknown error'}`);
+    throw new Error(
+      `API error: ${data.meta.error?.message ?? 'Unknown error'} (api_version: ${apiVersion})`,
+    );
   }
 
   return data;
@@ -318,24 +388,39 @@ export async function searchAllPages(params: SearchParams, maxPages = 10): Promi
 
 export interface ByIdParams {
   id: string;
+  viewpoint1: Point;
+  viewpoint2: Point;
   locale?: string;
+  /** Context rubric ID (e.g., 110357 for hookah bars) */
+  contextRubricId?: string;
 }
 
 export function buildByIdUrl(params: ByIdParams): string {
-  const { id, locale = 'ru_RU' } = params;
+  const { id, viewpoint1, viewpoint2, locale = 'ru_RU', contextRubricId = '110357' } = params;
 
   const sessionId = generateSessionId();
   const userId = generateUserId();
-  const r = 1138174652;
+  const r = 1138174652; // Fixed value required for API v3
+  const dateStr = new Date().toISOString().split('T')[0];
+  if (!dateStr) throw new Error('Invalid date');
+  const today = dateStr.replace(/-/g, '-');
+  const shv = `${today.slice(0, 4)}-${today.slice(5, 7)}-${today.slice(8, 10)}-17`;
+
+  // search_ctx format required for API v3: 0:r=RUBRIC_ID;1:a=ID1;2:a=ID2;3:r=RUBRIC_ID2
+  const searchCtx = `0:r%3D${contextRubricId}%3B1:a%3D70000201006757123%3B2:a%3D70000201006755194%3B3:r%3D367`;
 
   const urlParts = [
-    `id=${id}`,
+    `id=${encodeURIComponent(id)}`,
     `key=${getApiKey()}`,
     `locale=${locale}`,
     `fields=${BYID_FIELDS}`,
+    `search_ctx=${searchCtx}`,
+    `context_rubrics%5B0%5D=${contextRubricId}`,
+    `viewpoint1=${viewpoint1.lon},${viewpoint1.lat}`,
+    `viewpoint2=${viewpoint2.lon},${viewpoint2.lat}`,
     `stat%5Bsid%5D=${sessionId}`,
     `stat%5Buser%5D=${userId}`,
-    'shv=2026-01-21-17',
+    `shv=${shv}`,
     `r=${r}`,
   ];
 
@@ -357,8 +442,15 @@ export async function getOrganizationById(params: ByIdParams): Promise<Organizat
 
   const data = (await response.json()) as ApiResponse;
 
+  const apiVersion = data.meta.api_version ?? 'unknown';
+  if (!apiVersion.startsWith('3.')) {
+    console.warn(`⚠️  API version ${apiVersion} detected (expected 3.x). URL may be malformed.`);
+  }
+
   if (data.meta.code !== 200) {
-    throw new Error(`API error: ${data.meta.error?.message ?? 'Unknown error'}`);
+    throw new Error(
+      `API error: ${data.meta.error?.message ?? 'Unknown error'} (api_version: ${apiVersion})`,
+    );
   }
 
   const item = data.result?.items[0];

@@ -385,23 +385,11 @@ function extractOrganization(item: any, logger: Logger): ScrapedOrganization {
   }
 }
 
-// Extract data from page (API response or initialState)
+// Extract data from page using initialState
 async function extractDataFromPage(
   page: Page,
-  capturedResponses: any[],
   logger: Logger,
 ): Promise<DataExtractionResult | null> {
-  // Try API response first
-  if (capturedResponses.length > 0) {
-    const apiData = capturedResponses[0];
-    const item = apiData.result?.items?.[0];
-    if (item) {
-      logger.debug('Using API response');
-      return { item, source: 'api', fullData: apiData };
-    }
-  }
-
-  // Fallback to initialState
   try {
     const initialState = await page.evaluate(() => (window as any).initialState);
     const profileData = initialState?.data?.entity?.profile;
@@ -410,7 +398,7 @@ async function extractDataFromPage(
       if (profiles.length > 0) {
         const item = (profiles[0] as any)?.data;
         if (item) {
-          logger.debug('Using initialState');
+          logger.debug('Extracted data from initialState');
           return { item, source: 'initialState', fullData: initialState };
         }
       }
@@ -427,21 +415,29 @@ async function extractDataFromPage(
 async function scrapeSingleOrganization(
   page: Page,
   url: string,
-  capturedResponses: any[],
-  options: ScraperOptions,
   logger: Logger,
 ): Promise<{ organization: ScrapedOrganization; rawData: any } | null> {
-  // Clear previous responses
-  capturedResponses.length = 0;
+  const startTime = Date.now();
 
-  // Navigate to firm page
+  // Navigate to firm page and wait for DOM to load
+  const navStart = Date.now();
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: DEFAULT_NAVIGATION_TIMEOUT });
+  const navTime = Date.now() - navStart;
+  logger.debug(`⏱️  Navigation: ${navTime}ms`);
 
-  // Wait for data with configurable delay
-  await sleep(options.delayMs);
+  // Wait for initialState to be available
+  const waitStart = Date.now();
+  await page.waitForFunction(() => typeof (window as any).initialState !== 'undefined', {
+    timeout: 5000,
+  });
+  const waitTime = Date.now() - waitStart;
+  logger.debug(`⏱️  Wait for initialState: ${waitTime}ms`);
 
   // Extract data from page
-  const extraction = await extractDataFromPage(page, capturedResponses, logger);
+  const extractStart = Date.now();
+  const extraction = await extractDataFromPage(page, logger);
+  const extractTime = Date.now() - extractStart;
+  logger.debug(`⏱️  Data extraction: ${extractTime}ms`);
 
   if (!extraction) {
     throw new Error('No data found for this organization');
@@ -450,28 +446,15 @@ async function scrapeSingleOrganization(
   const { item, source, fullData } = extraction;
 
   // Build raw data entry - save only organization-related data
-  let rawDataContent: any;
-  if (source === 'api') {
-    // For API responses, save the entire response (already filtered)
-    rawDataContent = fullData;
-  } else {
-    // For initialState, extract only the organization data to save space
-    const profileData = fullData?.data?.entity?.profile;
-
-    if (profileData) {
-      // Save just the profile data, not the entire initialState
-      rawDataContent = {
+  const profileData = fullData?.data?.entity?.profile;
+  const rawDataContent = profileData
+    ? {
         meta: fullData?.meta,
         result: {
           items: [item],
         },
-      };
-    } else {
-      // Fallback: save full state if structure is unexpected
-      logger.warn('Unexpected initialState structure, saving full state');
-      rawDataContent = fullData;
-    }
-  }
+      }
+    : fullData; // Fallback to full state if structure is unexpected
 
   const rawData = {
     source,
@@ -483,8 +466,14 @@ async function scrapeSingleOrganization(
   const organization = extractOrganization(item, logger);
 
   // Go back to search results
+  const backStart = Date.now();
   await page.goBack({ waitUntil: 'domcontentloaded', timeout: DEFAULT_NAVIGATION_TIMEOUT });
   await sleep(DEFAULT_BACK_NAVIGATION_DELAY);
+  const backTime = Date.now() - backStart;
+  logger.debug(`⏱️  Go back: ${backTime}ms`);
+
+  const totalTime = Date.now() - startTime;
+  logger.debug(`⏱️  Total page time: ${totalTime}ms`);
 
   return { organization, rawData };
 }
@@ -508,41 +497,7 @@ async function scrapeSearchResults(
   await setupRequestBlocking(page, logger);
 
   const organizations: ScrapedOrganization[] = [];
-  const capturedResponses: any[] = [];
   const rawData: any[] = [];
-
-  // Track API calls for debugging
-  let apiCallCount = 0;
-  page.on('response', async (response) => {
-    const url = response.url();
-    if (url.includes('catalog.api.2gis')) {
-      apiCallCount++;
-      logger.debug(`API call #${apiCallCount}: ${url.substring(0, 80)}...`);
-    }
-  });
-
-  // Intercept API responses to extract data
-  page.on('response', async (response) => {
-    const url = response.url();
-    if (url.includes('catalog.api.2gis') && url.includes('/items/byid')) {
-      try {
-        const json = await response.json();
-
-        // Validate JSON structure
-        if (!json || typeof json !== 'object') {
-          logger.warn('Received invalid JSON response (not an object)');
-          return;
-        }
-
-        capturedResponses.push(json);
-        const itemName = json.result?.items?.[0]?.name ?? 'unknown';
-        logger.debug(`Captured API response: ${itemName}`);
-      } catch (e) {
-        const errorMsg = e instanceof Error ? e.message : 'Unknown error';
-        logger.warn(`Failed to parse API response: ${errorMsg}`);
-      }
-    }
-  });
 
   try {
     logger.info(`Navigating to 2GIS search for "${options.query}"...`);
@@ -609,7 +564,7 @@ async function scrapeSearchResults(
 
       // Use retry wrapper for each firm page
       const result = await withRetry(
-        async () => scrapeSingleOrganization(page, url, capturedResponses, options, logger),
+        async () => scrapeSingleOrganization(page, url, logger),
         options.maxRetries,
         logger,
         'Scraping organization',

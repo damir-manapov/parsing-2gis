@@ -33,7 +33,7 @@ bun scripts/scrape-search.ts --query "кальян" --max-records 50 --delay 200
 - `--max-retries` - Retry attempts for failed operations (default: 3)
 - `--headless` - Run browser in headless mode (default: true)
 - `--include-reviews` - Extract reviews for each organization (default: false)
-- `--max-reviews` - Maximum reviews per organization (default: 100, actual limit: 50)
+- `--max-reviews` - Maximum reviews per organization (default: 100, **unlimited with DOM pagination**)
 
 ### Examples
 
@@ -41,8 +41,11 @@ bun scripts/scrape-search.ts --query "кальян" --max-records 50 --delay 200
 # Basic scraping
 bun scripts/scrape-search.ts --query "ресторан" --max-records 10
 
-# Include reviews
-bun scripts/scrape-search.ts --query "кафе" --max-records 5 --include-reviews true --max-reviews 20
+# Include reviews (up to 50 from initialState)
+bun scripts/scrape-search.ts --query "кафе" --max-records 5 --include-reviews true --max-reviews 50
+
+# Extract more reviews with pagination (slower)
+bun scripts/scrape-search.ts --query "ресторан" --max-records 3 --include-reviews true --max-reviews 200
 
 # Visible browser (non-headless)
 bun scripts/scrape-search.ts --query "кальян" --headless false
@@ -66,8 +69,11 @@ pnpm dev
 # Scrape organizations with Playwright
 bun scripts/scrape-search.ts --query "кальян" --max-records 50
 
-# Include reviews (up to 50 per organization)
-bun scripts/scrape-search.ts --query "ресторан" --max-records 10 --include-reviews true --max-reviews 20
+# Include reviews (up to 50 per organization, fast)
+bun scripts/scrape-search.ts --query "ресторан" --max-records 10 --include-reviews true --max-reviews 50
+
+# Extract unlimited reviews with pagination (slower)
+bun scripts/scrape-search.ts --query "кафе" --max-records 3 --include-reviews true --max-reviews 200
 ```
 
 ### Development Scripts
@@ -135,7 +141,35 @@ Each organization includes:
 - **Organization**: Org ID, branch count, photo count
 - **Ratings**: Branch-level, organization-wide, and per-platform ratings
 - **Review Summary**: Aggregated ratings from multiple sources (2GIS, Flamp)
-- **Reviews** (optional): Full review texts with author, date, rating, likes
+- **Reviews** (optional): Full review texts with author, date, rating, engagement metrics
+
+### Review Extraction
+
+The scraper supports two methods for extracting reviews:
+
+**1. Fast extraction (default, up to 50 reviews)**
+- Extracts from `window.initialState` on `/tab/reviews` page
+- Speed: ~1.3s per organization
+- Includes: Review ID, text, rating, author, dates, likes/dislikes, source
+- Limitation: 2GIS only loads 50 reviews into initialState
+
+**2. Unlimited extraction (with DOM pagination)**
+- First gets 50 reviews from initialState (fast)
+- Then clicks "Load more" button and scrapes from DOM
+- Each click loads ~15-30 more reviews
+- Speed: ~1s per pagination click
+- Fields: Review text, author, date, rating (no engagement metrics from DOM)
+- Limitation: Slower, class-based selectors may break if 2GIS changes DOM structure
+
+**Example performance:**
+- 50 reviews: ~1.3s
+- 100 reviews: ~2.3s (50 fast + 1 click)
+- 150 reviews: ~3.3s (50 fast + 2 clicks)
+
+To extract more than 50 reviews:
+```bash
+bun scripts/scrape-search.ts --query "ресторан" --max-records 3 --include-reviews true --max-reviews 150
+```
 
 ### Data Output
 
@@ -152,9 +186,13 @@ The scraper is highly optimized for speed:
   - Wait for initialState: 10-15ms
   - Data extraction: ~95ms
 
-- **~2.6s per organization** (with reviews)
+- **~2.6s per organization** (with up to 50 reviews)
   - Organization data: ~1.4s
-  - Review extraction: ~1.3s (up to 50 reviews)
+  - Review extraction: ~1.3s (fast initialState extraction)
+
+- **~3-5s per organization** (with 100-200 reviews)
+  - Organization data: ~1.4s
+  - Review extraction: ~1.3s (first 50) + ~1s per pagination click
 
 **Optimizations:**
 - No unnecessary sleep delays
@@ -162,5 +200,9 @@ The scraper is highly optimized for speed:
 - Request blocking (images, fonts, analytics)
 - Instant data from `window.initialState`
 - 93% reduction in raw data file size
+- Hybrid approach: Fast initialState + DOM pagination for unlimited reviews
 
-**Example:** Scraping 10 organizations with reviews takes ~26 seconds total.
+**Example:** 
+- Scraping 10 organizations: ~14 seconds
+- With 50 reviews each: ~26 seconds (~2.6s per org)
+- With 100 reviews each: ~37 seconds (~3.7s per org)

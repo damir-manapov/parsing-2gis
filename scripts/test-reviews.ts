@@ -17,7 +17,6 @@ async function testReviews() {
   await page.waitForTimeout(3000);
 
   // Check if reviews are in initialState
-  // biome-ignore lint/suspicious/noExplicitAny: Testing script
   const reviews = await page.evaluate(() => {
     // biome-ignore lint/suspicious/noExplicitAny: Window object extension
     const state = (window as any).initialState;

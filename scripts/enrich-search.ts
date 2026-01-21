@@ -17,6 +17,8 @@ async function sleep(ms: number): Promise<void> {
 async function enrichOrganizations(
   branches: Array<{ id: string; name: string }>,
   delayMs: number,
+  viewpoint1: { lon: number; lat: number },
+  viewpoint2: { lon: number; lat: number },
 ): Promise<Organization[]> {
   const enrichedOrgs: Organization[] = [];
 
@@ -27,7 +29,7 @@ async function enrichOrganizations(
     console.log(`[${i + 1}/${branches.length}] Fetching: ${item.name}`);
 
     try {
-      const org = await getOrganizationById({ id: item.id });
+      const org = await getOrganizationById({ id: item.id, viewpoint1, viewpoint2 });
       if (org) {
         enrichedOrgs.push(org);
         console.log(`  ✓ Phone: ${org.phone ?? '-'} | Website: ${org.website ?? '-'}`);
@@ -76,7 +78,7 @@ async function main() {
 
   // Step 2: Fetch full details for each organization
   const byIdStartTime = Date.now();
-  const enrichedOrgs = await enrichOrganizations(branches, delayMs);
+  const enrichedOrgs = await enrichOrganizations(branches, delayMs, viewpoint1, viewpoint2);
   const byIdResponseTime = Date.now() - byIdStartTime;
 
   console.log(`\nEnriched ${enrichedOrgs.length} organizations.\n`);

@@ -1,4 +1,5 @@
 // Run with: bun scripts/fetch-by-id.ts <organization-id> [--lat1 55.926069] [--lon1 37.556366] [--lat2 55.581373] [--lon2 37.683974]
+// bun scripts/fetch-by-id.ts 70000001044609041_d5x9ik89dBdB9A824J7H1J2JH0IIGHGJkc7iqzjD39-c17d09136956I15491926-d8d5048B646J289370A77541479J3JIf8i3b78B8d33G4G1732000012H3J3H321J1306584i
 
 import { getOrganizationById } from '../src/api.js';
 import {

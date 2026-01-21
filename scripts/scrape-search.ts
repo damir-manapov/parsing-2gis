@@ -1,4 +1,4 @@
-// Run with: bun scripts/scrape-search.ts [--query "кальян"] [--delay 2000] [--max-records 50]
+// Run with: bun scripts/scrape-search.ts [--query "кальян"] [--delay 2000] [--max-records 50] [--headless]
 // Uses Playwright to scrape 2GIS search results and detail pages
 
 import type { Page } from 'playwright';
@@ -15,14 +15,54 @@ import {
   slugify,
 } from '../src/utils.js';
 
+// Configuration constants
+const DEFAULT_NAVIGATION_TIMEOUT = 30000;
+const DEFAULT_WAIT_TIMEOUT = 60000;
+const DEFAULT_BACK_NAVIGATION_DELAY = 500;
+
+interface MetroStation {
+  name: string;
+  distance: number;
+  line?: string;
+  color?: string;
+}
+
+interface Coordinates {
+  lat: number;
+  lon: number;
+}
+
 interface ScrapedOrganization {
   name: string;
+  description?: string;
   address: string;
+  addressComment?: string;
+  postcode?: string;
+  city?: string;
+  district?: string;
+  region?: string;
+  country?: string;
+  timezone?: string;
   phone?: string;
+  email?: string;
   website?: string;
+  schedule?: string;
   rating?: number;
   reviewCount?: number;
   rubrics: string[];
+  type?: string;
+  // Additional fields
+  coordinates?: Coordinates;
+  nearestMetro?: MetroStation[];
+  paymentMethods?: string[];
+  features?: string[];
+  orgName?: string;
+  orgId?: string;
+  branchCount?: number;
+  photoCount?: number;
+  hasPhotos?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 interface ScraperOptions {
@@ -30,6 +70,7 @@ interface ScraperOptions {
   delayMs: number;
   maxRecords: number;
   maxRetries: number;
+  headless: boolean;
 }
 
 interface DataExtractionResult {
@@ -92,19 +133,255 @@ async function withRetry<T>(
 }
 
 // Extract organization data from 2GIS item
-function extractOrganization(item: any): ScrapedOrganization {
-  const phone = findContact(item, 'phone');
-  const website = findContact(item, 'website');
+function extractOrganization(item: any, logger: Logger): ScrapedOrganization {
+  try {
+    // Extract contacts with error handling
+    const phone = findContact(item, 'phone');
+    const email = findContact(item, 'email');
+    const website = findContact(item, 'website');
 
-  return {
-    name: item.name ?? '',
-    address: item.address_name ?? '',
-    ...(phone !== undefined && { phone }),
-    ...(website !== undefined && { website }),
-    rating: item.reviews?.rating,
-    reviewCount: item.reviews?.general_rating_count,
-    rubrics: item.rubrics?.map((r: any) => r.name) ?? [],
-  };
+    // Extract name and description
+    let name = '';
+    let description: string | undefined;
+
+    try {
+      if (item.name_ex) {
+        name = item.name_ex.primary ?? item.name ?? '';
+        description = item.name_ex.extension;
+      } else {
+        name = item.name ?? '';
+      }
+    } catch (e) {
+      name = item.name ?? 'Unknown';
+      logger.warn(`Failed to extract name: ${e}`);
+    }
+
+    // Extract address hierarchy
+    let address = '';
+    let addressComment: string | undefined;
+    let postcode: string | undefined;
+    let city: string | undefined;
+    let district: string | undefined;
+    let region: string | undefined;
+    let country: string | undefined;
+
+    try {
+      address = item.address_name ?? '';
+      addressComment = item.address_comment;
+
+      if (item.address) {
+        const addr = item.address;
+        postcode = addr.postcode;
+
+        // Extract address components
+        if (addr.components) {
+          for (const component of addr.components) {
+            switch (component.type) {
+              case 'city':
+                city = component.name;
+                break;
+              case 'district':
+                district = component.name;
+                break;
+              case 'region':
+                region = component.name;
+                break;
+              case 'country':
+                country = component.name;
+                break;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      logger.warn(`Failed to extract address details: ${e}`);
+    }
+
+    // Extract schedule
+    let schedule: string | undefined;
+    try {
+      if (item.schedule?.working_hours) {
+        const hours = item.schedule.working_hours;
+        if (Array.isArray(hours) && hours.length > 0) {
+          schedule = hours
+            .map((h: any) => `${h.day}: ${h.working_hours?.join(', ') ?? 'closed'}`)
+            .join('; ');
+        } else if (typeof hours === 'string') {
+          schedule = hours;
+        }
+      }
+    } catch (e) {
+      logger.debug(`Failed to extract schedule: ${e}`);
+    }
+
+    // Extract reviews with validation
+    let rating: number | undefined;
+    let reviewCount: number | undefined;
+    try {
+      if (item.reviews) {
+        rating = typeof item.reviews.rating === 'number' ? item.reviews.rating : undefined;
+        reviewCount =
+          typeof item.reviews.general_rating_count === 'number'
+            ? item.reviews.general_rating_count
+            : undefined;
+      }
+    } catch (e) {
+      logger.debug(`Failed to extract reviews: ${e}`);
+    }
+
+    // Extract rubrics with error handling
+    let rubrics: string[] = [];
+    try {
+      if (Array.isArray(item.rubrics)) {
+        rubrics = item.rubrics.map((r: any) => r.name).filter((n: any) => typeof n === 'string');
+      }
+    } catch (e) {
+      logger.warn(`Failed to extract rubrics: ${e}`);
+    }
+
+    // Extract coordinates
+    let coordinates: Coordinates | undefined;
+    try {
+      if (item.point?.lat && item.point?.lon) {
+        coordinates = {
+          lat: item.point.lat,
+          lon: item.point.lon,
+        };
+      }
+    } catch (e) {
+      logger.debug(`Failed to extract coordinates: ${e}`);
+    }
+
+    // Extract nearest metro stations
+    let nearestMetro: MetroStation[] | undefined;
+    try {
+      if (item.links?.nearest_stations && Array.isArray(item.links.nearest_stations)) {
+        nearestMetro = item.links.nearest_stations
+          .slice(0, 3) // Top 3 closest
+          .map((station: any) => ({
+            name: station.name,
+            distance: station.distance,
+            line: station.comment,
+            color: station.color,
+          }))
+          .filter((s: any) => s.name);
+
+        if (nearestMetro && nearestMetro.length === 0) nearestMetro = undefined;
+      }
+    } catch (e) {
+      logger.debug(`Failed to extract metro stations: ${e}`);
+    }
+
+    // Extract payment methods and features
+    let paymentMethods: string[] | undefined;
+    let features: string[] | undefined;
+    try {
+      if (item.attribute_groups && Array.isArray(item.attribute_groups)) {
+        const payments: string[] = [];
+        const feats: string[] = [];
+
+        for (const group of item.attribute_groups) {
+          if (group.name === 'Способы оплаты' && Array.isArray(group.attributes)) {
+            payments.push(...group.attributes.map((a: any) => a.name).filter(Boolean));
+          } else if (Array.isArray(group.attributes)) {
+            feats.push(...group.attributes.map((a: any) => a.name).filter(Boolean));
+          }
+        }
+
+        if (payments.length > 0) paymentMethods = payments;
+        if (feats.length > 0) features = feats;
+      }
+    } catch (e) {
+      logger.debug(`Failed to extract attributes: ${e}`);
+    }
+
+    // Extract organization info
+    let orgName: string | undefined;
+    let orgId: string | undefined;
+    let branchCount: number | undefined;
+    try {
+      if (item.org) {
+        orgName = item.org.name || item.org.primary;
+        orgId = item.org.id;
+        branchCount = typeof item.org.branch_count === 'number' ? item.org.branch_count : undefined;
+      }
+    } catch (e) {
+      logger.debug(`Failed to extract org info: ${e}`);
+    }
+
+    // Extract photo info
+    let photoCount: number | undefined;
+    let hasPhotos: boolean | undefined;
+    try {
+      if (item.external_content && Array.isArray(item.external_content)) {
+        photoCount = item.external_content
+          .filter((c: any) => c.type === 'photo_album')
+          .reduce((sum: number, c: any) => sum + (c.count || 0), 0);
+
+        if (photoCount === 0) photoCount = undefined;
+      }
+
+      if (item.flags?.photos) {
+        hasPhotos = true;
+      }
+    } catch (e) {
+      logger.debug(`Failed to extract photo info: ${e}`);
+    }
+
+    // Extract timestamps
+    let createdAt: string | undefined;
+    let updatedAt: string | undefined;
+    try {
+      if (item.dates) {
+        createdAt = item.dates.created_at;
+        updatedAt = item.dates.updated_at;
+      }
+    } catch (e) {
+      logger.debug(`Failed to extract dates: ${e}`);
+    }
+
+    return {
+      name,
+      ...(description && { description }),
+      address,
+      ...(addressComment && { addressComment }),
+      ...(postcode && { postcode }),
+      ...(city && { city }),
+      ...(district && { district }),
+      ...(region && { region }),
+      ...(country && { country }),
+      ...(item.timezone && { timezone: item.timezone }),
+      ...(phone && { phone }),
+      ...(email && { email }),
+      ...(website && { website }),
+      ...(schedule && { schedule }),
+      ...(rating !== undefined && { rating }),
+      ...(reviewCount !== undefined && { reviewCount }),
+      rubrics,
+      ...(item.type && { type: item.type }),
+      ...(coordinates && { coordinates }),
+      ...(nearestMetro && { nearestMetro }),
+      ...(paymentMethods && { paymentMethods }),
+      ...(features && { features }),
+      ...(orgName && { orgName }),
+      ...(orgId && { orgId }),
+      ...(branchCount !== undefined && { branchCount }),
+      ...(photoCount !== undefined && { photoCount }),
+      ...(hasPhotos !== undefined && { hasPhotos }),
+      ...(createdAt && { createdAt }),
+      ...(updatedAt && { updatedAt }),
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`Failed to extract organization data: ${errorMsg}`);
+
+    // Return minimal valid object
+    return {
+      name: item?.name ?? 'Unknown',
+      address: item?.address_name ?? '',
+      rubrics: [],
+    };
+  }
 }
 
 // Extract data from page (API response or initialState)
@@ -138,7 +415,8 @@ async function extractDataFromPage(
       }
     }
   } catch (e) {
-    logger.warn(`Failed to extract initialState: ${e}`);
+    const errorMsg = e instanceof Error ? e.message : 'Unknown error';
+    logger.warn(`Failed to extract initialState: ${errorMsg}`);
   }
 
   return null;
@@ -156,7 +434,7 @@ async function scrapeSingleOrganization(
   capturedResponses.length = 0;
 
   // Navigate to firm page
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: DEFAULT_NAVIGATION_TIMEOUT });
 
   // Wait for data with configurable delay
   await sleep(options.delayMs);
@@ -170,22 +448,43 @@ async function scrapeSingleOrganization(
 
   const { item, source } = extraction;
 
-  // Build raw data entry
+  // Build raw data entry - save only organization-related data
+  let rawDataContent: any;
+  if (source === 'api') {
+    // For API responses, save the entire response (already filtered)
+    rawDataContent = capturedResponses[0];
+  } else {
+    // For initialState, extract only the organization data to save space
+    const fullState = await page.evaluate(() => (window as any).initialState);
+    const profileData = fullState?.data?.entity?.profile;
+
+    if (profileData) {
+      // Save just the profile data, not the entire initialState
+      rawDataContent = {
+        meta: fullState?.meta,
+        result: {
+          items: [item],
+        },
+      };
+    } else {
+      // Fallback: save full state if structure is unexpected
+      logger.warn('Unexpected initialState structure, saving full state');
+      rawDataContent = fullState;
+    }
+  }
+
   const rawData = {
     source,
     url,
-    data:
-      source === 'api'
-        ? capturedResponses[0]
-        : await page.evaluate(() => (window as any).initialState),
+    data: rawDataContent,
   };
 
   // Extract organization data
-  const organization = extractOrganization(item);
+  const organization = extractOrganization(item, logger);
 
   // Go back to search results
-  await page.goBack({ waitUntil: 'domcontentloaded', timeout: 30000 });
-  await sleep(500);
+  await page.goBack({ waitUntil: 'domcontentloaded', timeout: DEFAULT_NAVIGATION_TIMEOUT });
+  await sleep(DEFAULT_BACK_NAVIGATION_DELAY);
 
   return { organization, rawData };
 }
@@ -195,10 +494,10 @@ async function scrapeSearchResults(
 ): Promise<{ organizations: ScrapedOrganization[]; rawData: any[] }> {
   const logger = new Logger();
   logger.info(
-    `Starting scraper with options: maxRecords=${options.maxRecords}, delay=${options.delayMs}ms, retries=${options.maxRetries}`,
+    `Starting scraper with options: maxRecords=${options.maxRecords}, delay=${options.delayMs}ms, retries=${options.maxRetries}, headless=${options.headless}`,
   );
 
-  const browser = await chromium.launch({ headless: false });
+  const browser = await chromium.launch({ headless: options.headless });
   const context = await browser.newContext({
     userAgent:
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
@@ -228,11 +527,19 @@ async function scrapeSearchResults(
     if (url.includes('catalog.api.2gis') && url.includes('/items/byid')) {
       try {
         const json = await response.json();
+
+        // Validate JSON structure
+        if (!json || typeof json !== 'object') {
+          logger.warn('Received invalid JSON response (not an object)');
+          return;
+        }
+
         capturedResponses.push(json);
         const itemName = json.result?.items?.[0]?.name ?? 'unknown';
         logger.debug(`Captured API response: ${itemName}`);
       } catch (e) {
-        logger.warn(`Failed to parse API response: ${e}`);
+        const errorMsg = e instanceof Error ? e.message : 'Unknown error';
+        logger.warn(`Failed to parse API response: ${errorMsg}`);
       }
     }
   });
@@ -245,7 +552,10 @@ async function scrapeSearchResults(
 
     const navigateSuccess = await withRetry(
       async () => {
-        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.goto(searchUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: DEFAULT_WAIT_TIMEOUT,
+        });
         return true;
       },
       options.maxRetries,
@@ -264,7 +574,9 @@ async function scrapeSearchResults(
     // Wait for search results
     const resultsFound = await withRetry(
       async () => {
-        await page.waitForSelector('a[href*="/moscow/firm/"]', { timeout: 30000 });
+        await page.waitForSelector('a[href*="/moscow/firm/"]', {
+          timeout: DEFAULT_NAVIGATION_TIMEOUT,
+        });
         return true;
       },
       options.maxRetries,
@@ -330,6 +642,7 @@ async function main() {
     delay: '2000',
     'max-records': '50',
     'max-retries': '3',
+    headless: 'true',
   });
 
   const options: ScraperOptions = {
@@ -337,6 +650,7 @@ async function main() {
     delayMs: Number(args.delay),
     maxRecords: Number(args['max-records']),
     maxRetries: Number(args['max-retries']),
+    headless: args.headless === 'true',
   };
 
   const logger = new Logger();
@@ -359,11 +673,20 @@ async function main() {
 
   for (const org of organizations) {
     console.log(`\n${org.name}`);
+    if (org.description) console.log(`  Description: ${org.description}`);
     console.log(`  Address: ${org.address}`);
+    if (org.city || org.district) {
+      const location = [org.city, org.district, org.region].filter(Boolean).join(', ');
+      console.log(`  Location: ${location}`);
+    }
+    if (org.postcode) console.log(`  Postcode: ${org.postcode}`);
     console.log(`  Phone: ${org.phone ?? '-'}`);
+    if (org.email) console.log(`  Email: ${org.email}`);
     console.log(`  Website: ${org.website ?? '-'}`);
+    if (org.schedule) console.log(`  Schedule: ${org.schedule}`);
     console.log(`  Rating: ${org.rating ?? '-'} (${org.reviewCount ?? 0} reviews)`);
     console.log(`  Rubrics: ${org.rubrics.join(', ')}`);
+    if (org.type) console.log(`  Type: ${org.type}`);
   }
 
   // Save results

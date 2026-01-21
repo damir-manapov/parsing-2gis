@@ -126,10 +126,6 @@ export interface CreateMetadataParams {
   query: unknown;
   responseTimeMs?: number;
   totalResults?: number;
-  enrichedCount?: number;
-  searchResponseTimeMs?: number;
-  byIdResponseTimeMs?: number;
-  totalResponseTimeMs?: number;
 }
 
 export function createMetadata(params: CreateMetadataParams): Metadata {

@@ -22,6 +22,10 @@ export interface Organization {
   district: string | undefined;
   point: Point;
   phone: string | undefined;
+  website: string | undefined;
+  email: string | undefined;
+  telegram: string | undefined;
+  vkontakte: string | undefined;
   schedule: Schedule | undefined;
   rubrics: Rubric[];
   rating: number | undefined;
@@ -102,6 +106,8 @@ export interface ApiItem {
     contacts?: Array<{
       type: string;
       value: string;
+      text?: string;
+      url?: string;
     }>;
   }>;
 }

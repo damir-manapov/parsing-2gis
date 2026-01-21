@@ -96,6 +96,38 @@ const DEFAULT_FIELDS = [
   'items.summary',
 ].join(',');
 
+const BYID_FIELDS = [
+  'items.locale',
+  'items.flags',
+  'items.adm_div',
+  'items.city_alias',
+  'items.region_id',
+  'items.segment_id',
+  'items.reviews',
+  'items.point',
+  'items.links',
+  'items.name_ex',
+  'items.org',
+  'items.group',
+  'items.dates',
+  'items.external_content',
+  'items.contact_groups',
+  'items.comment',
+  'items.description',
+  'items.timezone_offset',
+  'items.address',
+  'items.schedule',
+  'items.schedule_special',
+  'items.rubrics',
+  'items.reply_rate',
+  'items.attribute_groups',
+  'items.has_goods',
+  'items.has_payments',
+  'items.delivery',
+  'items.order_with_cart',
+  'items.metarubrics',
+].join(',');
+
 const DEFAULT_TYPES = [
   'adm_div.city',
   'adm_div.district',
@@ -215,9 +247,18 @@ export function parseItem(item: ApiItem): Organization {
   const city = item.adm_div?.find((d) => d.type === 'city')?.name;
   const district = item.adm_div?.find((d) => d.type === 'district')?.name;
 
-  const phone = item.contact_groups
-    ?.flatMap((g) => g.contacts ?? [])
-    .find((c) => c.type === 'phone')?.value;
+  const allContacts = item.contact_groups?.flatMap((g) => g.contacts ?? []) ?? [];
+
+  const findContact = (type: string) => allContacts.find((c) => c.type === type);
+
+  const phone = findContact('phone')?.value;
+  const websiteContact = findContact('website');
+  const website = websiteContact?.url ?? websiteContact?.text;
+  const email = findContact('email')?.value;
+  const telegramContact = findContact('telegram');
+  const telegram = telegramContact?.url ?? telegramContact?.value;
+  const vkontakteContact = findContact('vkontakte');
+  const vkontakte = vkontakteContact?.url ?? vkontakteContact?.value;
 
   return {
     id: item.id,
@@ -228,6 +269,10 @@ export function parseItem(item: ApiItem): Organization {
     district,
     point: item.point ?? { lat: 0, lon: 0 },
     phone,
+    website,
+    email,
+    telegram,
+    vkontakte,
     schedule: parseSchedule(item.schedule),
     rubrics:
       item.rubrics?.map((r) => ({
@@ -269,4 +314,55 @@ export async function searchAllPages(params: SearchParams, maxPages = 10): Promi
   }
 
   return allOrgs;
+}
+
+export interface ByIdParams {
+  id: string;
+  locale?: string;
+}
+
+export function buildByIdUrl(params: ByIdParams): string {
+  const { id, locale = 'ru_RU' } = params;
+
+  const sessionId = generateSessionId();
+  const userId = generateUserId();
+  const r = 1138174652;
+
+  const urlParts = [
+    `id=${id}`,
+    `key=${getApiKey()}`,
+    `locale=${locale}`,
+    `fields=${BYID_FIELDS}`,
+    `stat%5Bsid%5D=${sessionId}`,
+    `stat%5Buser%5D=${userId}`,
+    'shv=2026-01-21-17',
+    `r=${r}`,
+  ];
+
+  return `${API_BASE_URL}/byid?${urlParts.join('&')}`;
+}
+
+export async function getOrganizationById(params: ByIdParams): Promise<Organization | undefined> {
+  const url = buildByIdUrl(params);
+
+  const response = await fetch(url, {
+    headers: {
+      'user-agent': USER_AGENT,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error: ${response.status}`);
+  }
+
+  const data = (await response.json()) as ApiResponse;
+
+  if (data.meta.code !== 200) {
+    throw new Error(`API error: ${data.meta.error?.message ?? 'Unknown error'}`);
+  }
+
+  const item = data.result?.items[0];
+  if (!item) return undefined;
+
+  return parseItem(item);
 }

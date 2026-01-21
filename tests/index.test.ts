@@ -97,5 +97,41 @@ describe('parseItem', () => {
     expect(org.point).toEqual({ lat: 0, lon: 0 });
     expect(org.rubrics).toEqual([]);
     expect(org.rating).toBeUndefined();
+    expect(org.website).toBeUndefined();
+    expect(org.email).toBeUndefined();
+    expect(org.telegram).toBeUndefined();
+    expect(org.vkontakte).toBeUndefined();
+  });
+
+  it('should parse contact groups', () => {
+    const item: ApiItem = {
+      id: '789',
+      type: 'branch',
+      name: 'Org with contacts',
+      contact_groups: [
+        {
+          contacts: [
+            { type: 'phone', value: '+79001234567' },
+            {
+              type: 'website',
+              value: 'http://example.com',
+              url: 'https://example.com',
+              text: 'example.com',
+            },
+            { type: 'email', value: 'info@example.com' },
+            { type: 'telegram', value: 'https://t.me/example', url: 'https://t.me/example' },
+            { type: 'vkontakte', value: 'https://vk.com/example', url: 'https://vk.com/example' },
+          ],
+        },
+      ],
+    };
+
+    const org = parseItem(item);
+
+    expect(org.phone).toBe('+79001234567');
+    expect(org.website).toBe('https://example.com');
+    expect(org.email).toBe('info@example.com');
+    expect(org.telegram).toBe('https://t.me/example');
+    expect(org.vkontakte).toBe('https://vk.com/example');
   });
 });

@@ -1,6 +1,7 @@
-// Run with: bun scripts/scrape-search.ts [--query "кальян"] [--delay 2000]
+// Run with: bun scripts/scrape-search.ts [--query "кальян"] [--delay 2000] [--max-records 50]
 // Uses Playwright to scrape 2GIS search results and detail pages
 
+import type { Page } from 'playwright';
 import { chromium } from 'playwright';
 import {
   createFileTimestamp,
@@ -21,14 +22,117 @@ interface ScrapedOrganization {
   rubrics: string[];
 }
 
+interface ScraperOptions {
+  query: string;
+  delayMs: number;
+  maxRecords: number;
+  maxRetries: number;
+}
+
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Logger utility
+class Logger {
+  private startTime: number;
+
+  constructor() {
+    this.startTime = Date.now();
+  }
+
+  private elapsed(): string {
+    const ms = Date.now() - this.startTime;
+    return `[${(ms / 1000).toFixed(1)}s]`;
+  }
+
+  info(message: string) {
+    console.log(`${this.elapsed()} ℹ️  ${message}`);
+  }
+
+  success(message: string) {
+    console.log(`${this.elapsed()} ✓ ${message}`);
+  }
+
+  error(message: string) {
+    console.log(`${this.elapsed()} ✗ ${message}`);
+  }
+
+  warn(message: string) {
+    console.log(`${this.elapsed()} ⚠️  ${message}`);
+  }
+
+  debug(message: string) {
+    console.log(`${this.elapsed()} 🔍 ${message}`);
+  }
+
+  progress(current: number, total: number, message: string) {
+    console.log(`${this.elapsed()} [${current}/${total}] ${message}`);
+  }
+}
+
+// Block unnecessary resources to improve performance
+async function setupRequestBlocking(page: Page, logger: Logger) {
+  await page.route('**/*', (route) => {
+    const url = route.request().url();
+    const resourceType = route.request().resourceType();
+
+    // Block images, fonts, media, stylesheets to speed up scraping
+    if (['image', 'font', 'media', 'stylesheet'].includes(resourceType)) {
+      route.abort();
+      return;
+    }
+
+    // Block analytics, ads, and tracking
+    if (
+      url.includes('google-analytics') ||
+      url.includes('googletagmanager') ||
+      url.includes('yandex.ru/metrika') ||
+      url.includes('mc.yandex.ru') ||
+      url.includes('doubleclick.net') ||
+      url.includes('/ads/') ||
+      url.includes('/metrics/')
+    ) {
+      route.abort();
+      return;
+    }
+
+    route.continue();
+  });
+  logger.debug('Request blocking enabled (images, fonts, analytics)');
+}
+
+// Retry wrapper for operations that might fail
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number,
+  logger: Logger,
+  operationName: string,
+): Promise<T | null> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      if (attempt === maxRetries) {
+        logger.error(`${operationName} failed after ${maxRetries} attempts: ${errorMsg}`);
+        return null;
+      }
+      logger.warn(`${operationName} attempt ${attempt} failed: ${errorMsg}, retrying...`);
+      await sleep(1000 * attempt); // Exponential backoff
+    }
+  }
+  return null;
+}
+
 async function scrapeSearchResults(
-  query: string,
-  delayMs: number,
+  options: ScraperOptions,
 ): Promise<{ organizations: ScrapedOrganization[]; rawData: any[] }> {
+  const logger = new Logger();
+  logger.info(
+    `Starting scraper with options: maxRecords=${options.maxRecords}, delay=${options.delayMs}ms, retries=${options.maxRetries}`,
+  );
+
   const browser = await chromium.launch({ headless: false });
   const context = await browser.newContext({
     userAgent:
@@ -36,106 +140,139 @@ async function scrapeSearchResults(
   });
   const page = await context.newPage();
 
+  // Setup request blocking
+  await setupRequestBlocking(page, logger);
+
   const organizations: ScrapedOrganization[] = [];
   const capturedResponses: any[] = [];
-  const rawData: any[] = []; // Store raw API responses and initialState data
+  const rawData: any[] = [];
 
-  // Debug: log all API calls
+  // Track API calls for debugging
+  let apiCallCount = 0;
   page.on('response', async (response) => {
     const url = response.url();
-    if (url.includes('catalog.api.2gis') || url.includes('2gis')) {
-      console.log(`  🔍 API call: ${url.substring(0, 100)}...`);
+    if (url.includes('catalog.api.2gis')) {
+      apiCallCount++;
+      logger.debug(`API call #${apiCallCount}: ${url.substring(0, 80)}...`);
     }
   });
 
-  // Intercept API responses
+  // Intercept API responses to extract data
   page.on('response', async (response) => {
     const url = response.url();
     if (url.includes('catalog.api.2gis') && url.includes('/items/byid')) {
-      console.log(`  📡 Intercepted API call: ${url}`);
       try {
         const json = await response.json();
         capturedResponses.push(json);
-        console.log(
-          `  📦 Captured API response for: ${json.result?.items?.[0]?.name ?? 'unknown'}`,
-        );
+        const itemName = json.result?.items?.[0]?.name ?? 'unknown';
+        logger.debug(`Captured API response: ${itemName}`);
       } catch (e) {
-        console.log(`  ⚠️  Failed to parse response: ${e}`);
+        logger.warn(`Failed to parse API response: ${e}`);
       }
     }
   });
 
   try {
-    console.log(`Navigating to 2GIS search for "${query}"...\n`);
+    logger.info(`Navigating to 2GIS search for "${options.query}"...`);
 
-    // Navigate to 2GIS search
-    const searchUrl = `https://2gis.ru/moscow/search/${encodeURIComponent(query)}`;
-    console.log(`URL: ${searchUrl}`);
+    // Navigate to search page with retry
+    const searchUrl = `https://2gis.ru/moscow/search/${encodeURIComponent(options.query)}`;
 
-    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    console.log('Page loaded, waiting for search results...');
-
-    // Take a screenshot for debugging
-    await page.screenshot({ path: 'debug-page.png', fullPage: true });
-    console.log('Screenshot saved to debug-page.png');
-
-    // Wait for search results to load - look for firm links
-    await page.waitForSelector('a[href*="/moscow/firm/"]', { timeout: 30000 });
-    console.log('Search results found!');
-
-    // Get URLs instead of elements to avoid detached DOM issues
-    const firmUrls = await page.$$eval('a[href*="/moscow/firm/"]', (links) =>
-      links.slice(0, 12).map((link) => (link as HTMLAnchorElement).href),
+    const navigateSuccess = await withRetry(
+      async () => {
+        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        return true;
+      },
+      options.maxRetries,
+      logger,
+      'Search page navigation',
     );
-    console.log(`Found ${firmUrls.length} results\n`);
 
-    for (let i = 0; i < firmUrls.length; i++) {
+    if (!navigateSuccess) {
+      logger.error('Failed to load search page');
+      await browser.close();
+      return { organizations, rawData };
+    }
+
+    logger.success('Search page loaded');
+
+    // Wait for search results
+    const resultsFound = await withRetry(
+      async () => {
+        await page.waitForSelector('a[href*="/moscow/firm/"]', { timeout: 30000 });
+        return true;
+      },
+      options.maxRetries,
+      logger,
+      'Waiting for search results',
+    );
+
+    if (!resultsFound) {
+      logger.error('No search results found');
+      await browser.close();
+      return { organizations, rawData };
+    }
+
+    // Extract firm URLs
+    const firmUrls = await page.$$eval('a[href*="/moscow/firm/"]', (links) =>
+      links.slice(0, 50).map((link) => (link as HTMLAnchorElement).href),
+    );
+
+    const totalToScrape = Math.min(firmUrls.length, options.maxRecords);
+    logger.info(`Found ${firmUrls.length} results, will scrape ${totalToScrape}`);
+
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (let i = 0; i < totalToScrape; i++) {
       const url = firmUrls[i];
       if (!url) continue;
 
-      try {
-        console.log(`[${i + 1}/${firmUrls.length}] Opening: ${url}`);
+      logger.progress(i + 1, totalToScrape, `Processing: ${url.split('/').pop()}`);
 
-        // Clear previous responses
-        capturedResponses.length = 0;
+      // Use retry wrapper for each firm page
+      const result = await withRetry(
+        async () => {
+          // Clear previous responses
+          capturedResponses.length = 0;
 
-        // Navigate to firm page - this will trigger API call OR use initialState
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          // Navigate to firm page
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-        // Wait longer for API response to be captured
-        await sleep(delayMs);
+          // Wait for data with configurable delay
+          await sleep(options.delayMs);
 
-        console.log(`  Captured ${capturedResponses.length} API responses`);
+          let item: any = null;
 
-        let item: any = null;
-
-        // Try to get from captured API response first
-        if (capturedResponses.length > 0) {
-          const apiData = capturedResponses[0];
-          item = apiData.result?.items?.[0];
-          rawData.push({ source: 'api', url, data: apiData });
-          console.log(`  Using API response`);
-        } else {
-          // Fallback: extract from window.initialState (pre-rendered data)
-          try {
-            const initialState = await page.evaluate(() => (window as any).initialState);
-            const profileData = initialState?.data?.entity?.profile;
-            if (profileData) {
-              // Get first profile entry
-              const profiles = Object.values(profileData);
-              if (profiles.length > 0) {
-                item = (profiles[0] as any)?.data;
-                rawData.push({ source: 'initialState', url, data: initialState });
-                console.log(`  Using initialState`);
+          // Try API response first
+          if (capturedResponses.length > 0) {
+            const apiData = capturedResponses[0];
+            item = apiData.result?.items?.[0];
+            rawData.push({ source: 'api', url, data: apiData });
+            logger.debug('Using API response');
+          } else {
+            // Fallback to initialState
+            try {
+              const initialState = await page.evaluate(() => (window as any).initialState);
+              const profileData = initialState?.data?.entity?.profile;
+              if (profileData) {
+                const profiles = Object.values(profileData);
+                if (profiles.length > 0) {
+                  item = (profiles[0] as any)?.data;
+                  rawData.push({ source: 'initialState', url, data: initialState });
+                  logger.debug('Using initialState');
+                }
               }
+            } catch (e) {
+              throw new Error(`Failed to extract data: ${e}`);
             }
-          } catch (e) {
-            console.log(`  ⚠️  Failed to extract initialState: ${e}`);
           }
-        }
 
-        // Extract from item data
-        if (item) {
+          if (!item) {
+            throw new Error('No data found for this organization');
+          }
+
+          // Extract organization data
           const org: ScrapedOrganization = {
             name: item.name ?? '',
             address: item.address_name ?? '',
@@ -151,21 +288,30 @@ async function scrapeSearchResults(
           };
 
           organizations.push(org);
-          console.log(`  ✓ ${org.name}`);
-          console.log(`    Phone: ${org.phone ?? '-'} | Website: ${org.website ?? '-'}`);
-        } else {
-          console.log(`  ✗ No data found`);
-        }
+          logger.success(`${org.name} | Phone: ${org.phone ?? '-'} | Rating: ${org.rating ?? '-'}`);
 
-        // Go back to search results
-        await page.goBack({ waitUntil: 'domcontentloaded', timeout: 30000 });
-        await sleep(500);
-      } catch (error) {
-        console.log(`  ✗ Error: ${error instanceof Error ? error.message : 'Unknown'}`);
+          // Go back to search results
+          await page.goBack({ waitUntil: 'domcontentloaded', timeout: 30000 });
+          await sleep(500);
+
+          return org;
+        },
+        options.maxRetries,
+        logger,
+        `Scraping organization`,
+      );
+
+      if (result) {
+        successCount++;
+      } else {
+        failureCount++;
       }
     }
+
+    logger.info(`Scraping complete: ${successCount} succeeded, ${failureCount} failed`);
   } finally {
     await browser.close();
+    logger.debug('Browser closed');
   }
 
   return { organizations, rawData };
@@ -175,19 +321,35 @@ async function main() {
   const args = parseArgs(process.argv.slice(2), {
     query: 'кальян',
     delay: '2000',
+    'max-records': '50',
+    'max-retries': '3',
   });
 
-  const delayMs = Number(args.delay);
+  const options: ScraperOptions = {
+    query: args.query,
+    delayMs: Number(args.delay),
+    maxRecords: Number(args['max-records']),
+    maxRetries: Number(args['max-retries']),
+  };
 
-  console.log(`Scraping 2GIS for "${args.query}" in Moscow...\n`);
+  const logger = new Logger();
+  logger.info(`Scraping 2GIS for "${options.query}" in Moscow`);
+  logger.info(
+    `Configuration: delay=${options.delayMs}ms, maxRecords=${options.maxRecords}, retries=${options.maxRetries}`,
+  );
 
   const startTime = Date.now();
-  const { organizations, rawData } = await scrapeSearchResults(args.query, delayMs);
+  const { organizations, rawData } = await scrapeSearchResults(options);
   const responseTime = Date.now() - startTime;
 
-  console.log(`\n\nScraped ${organizations.length} organizations in ${responseTime}ms.\n`);
+  logger.info(`Total time: ${(responseTime / 1000).toFixed(1)}s`);
+  logger.success(`Scraped ${organizations.length} organizations`);
 
   // Display summary
+  console.log(`\n${'='.repeat(80)}`);
+  console.log('RESULTS SUMMARY');
+  console.log('='.repeat(80));
+
   for (const org of organizations) {
     console.log(`\n${org.name}`);
     console.log(`  Address: ${org.address}`);
@@ -203,20 +365,23 @@ async function main() {
     apiVersion: 'playwright-scrape',
     endpoint: 'search-scrape',
     statusCode: 200,
-    query: args.query,
+    query: options.query,
     totalResults: organizations.length,
     responseTimeMs: responseTime,
   });
 
-  const slug = slugify(args.query);
+  const slug = slugify(options.query);
 
   // Save raw data (API responses + initialState)
   await saveRawData(`search-scrape-raw-${slug}-${fileTimestamp}.json`, metadata, rawData);
+  logger.success(`Raw data saved (${rawData.length} items)`);
 
   // Save parsed organizations
   await saveParsedData(`search-scrape-${slug}-${fileTimestamp}.json`, metadata, organizations);
+  logger.success(`Parsed data saved (${organizations.length} items)`);
 
-  console.log('\n✅ Done!');
+  console.log(`\n${'='.repeat(80)}`);
+  logger.success('Scraping completed successfully!');
 }
 
 main().catch((error) => {

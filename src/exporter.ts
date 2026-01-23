@@ -3,29 +3,13 @@
  * Exports collected reviews to JSONL or CSV format
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { PublisherRepository, type ReviewDataset } from './repos/index.js';
 
 export type ExportFormat = 'jsonl' | 'csv';
 
-export interface ReviewDataset {
-  text: string;
-  rating: number;
-}
-
-interface ReviewFile {
-  metadata: {
-    query?: string;
-    orgId?: string;
-    timestamp: string;
-  };
-  data: Array<{
-    text: string;
-    rating: number;
-    date?: string | null;
-    author?: string;
-  }>;
-}
+export type { ReviewDataset };
 
 export interface ExportResult {
   reviews: ReviewDataset[];
@@ -33,35 +17,12 @@ export interface ExportResult {
   format: ExportFormat;
 }
 
-const REVIEWS_DIR = 'data/parsed/full-with-reviews/reviews';
-
 /**
- * Collect all reviews from parsed data
+ * Collect all reviews from parsed data using repository
  */
-export function collectReviews(reviewsDir: string = REVIEWS_DIR): ReviewDataset[] {
-  if (!existsSync(reviewsDir)) {
-    throw new Error(`Reviews directory not found: ${reviewsDir}`);
-  }
-
-  const allReviews: ReviewDataset[] = [];
-  const files = readdirSync(reviewsDir).filter((f) => f.endsWith('.json'));
-
-  for (const file of files) {
-    const filePath = join(reviewsDir, file);
-    const content = readFileSync(filePath, 'utf-8');
-    const reviewFile: ReviewFile = JSON.parse(content);
-
-    for (const review of reviewFile.data) {
-      if (review.text && review.rating) {
-        allReviews.push({
-          text: review.text,
-          rating: review.rating,
-        });
-      }
-    }
-  }
-
-  return allReviews;
+export async function collectReviews(reviewsDir?: string): Promise<ReviewDataset[]> {
+  const repository = new PublisherRepository();
+  return repository.collectReviews(reviewsDir);
 }
 
 /**
@@ -88,24 +49,22 @@ export function exportToCSV(reviews: ReviewDataset[]): string {
 /**
  * Export reviews dataset to file
  */
-export function exportReviews(
+export async function exportReviews(
   outputDir: string,
   format: ExportFormat,
-  reviewsDir: string = REVIEWS_DIR,
-): ExportResult {
-  const reviews = collectReviews(reviewsDir);
+  reviewsDir?: string,
+): Promise<ExportResult> {
+  const reviews = await collectReviews(reviewsDir);
 
   // Ensure output directory exists
-  if (!existsSync(outputDir)) {
-    mkdirSync(outputDir, { recursive: true });
-  }
+  await mkdir(outputDir, { recursive: true });
 
   const extension = format === 'jsonl' ? 'jsonl' : 'csv';
   const outputPath = join(outputDir, `reviews-dataset.${extension}`);
 
   const content = format === 'jsonl' ? exportToJSONL(reviews) : exportToCSV(reviews);
 
-  writeFileSync(outputPath, content, 'utf-8');
+  await writeFile(outputPath, content, 'utf-8');
 
   return {
     reviews,

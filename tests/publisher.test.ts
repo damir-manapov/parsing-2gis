@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { generateDatasetCard, getUploadInstructions } from '../src/publisher.js';
-import { PublisherRepository } from '../src/publisher-repository.js';
+import { PublisherRepository } from '../src/repos/index.js';
 
 const testExportsDir = 'data/exports';
 const testReviewsFile = `${testExportsDir}/reviews-dataset.jsonl`;
@@ -25,8 +25,8 @@ describe('publisher', () => {
   });
 
   describe('repository.hasReviewsDataset', () => {
-    it('should return true when reviews file exists', () => {
-      expect(repository.hasReviewsDataset()).toBe(true);
+    it('should return true when reviews file exists', async () => {
+      expect(await repository.hasReviewsDataset()).toBe(true);
     });
   });
 

@@ -6,7 +6,7 @@
 // Modes: list (basic data only), full (detailed data), full-with-reviews (detailed data + reviews)
 
 import { DEFAULT_DELAYS, DEFAULT_LIMITS } from '../src/config.js';
-import { ScraperRepository } from '../src/repository.js';
+import { ScraperRepository } from '../src/repos/index.js';
 import { scrapeSearchResults } from '../src/scraper/index.js';
 import type { ScrapedOrganization, ScraperOptions } from '../src/types/index.js';
 import { Logger, parseArgs } from '../src/utils.js';

@@ -72,21 +72,23 @@ describe('exporter', () => {
   });
 
   describe('collectReviews', () => {
-    it('should collect reviews from directory', () => {
-      const reviews = collectReviews(testDir);
+    it('should collect reviews from directory', async () => {
+      const reviews = await collectReviews(testDir);
 
       expect(reviews).toHaveLength(3);
       expect(reviews[0]).toEqual({ text: 'Great place!', rating: 5 });
     });
 
-    it('should throw error if directory does not exist', () => {
-      expect(() => collectReviews('nonexistent-dir')).toThrow('Reviews directory not found');
+    it('should throw error if directory does not exist', async () => {
+      await expect(collectReviews('nonexistent-dir')).rejects.toThrow(
+        'Reviews directory not found',
+      );
     });
   });
 
   describe('exportReviews', () => {
-    it('should export reviews to JSONL file', () => {
-      const result = exportReviews(testOutputDir, 'jsonl', testDir);
+    it('should export reviews to JSONL file', async () => {
+      const result = await exportReviews(testOutputDir, 'jsonl', testDir);
 
       expect(result.reviews).toHaveLength(3);
       expect(result.format).toBe('jsonl');
@@ -94,8 +96,8 @@ describe('exporter', () => {
       expect(existsSync(result.outputPath)).toBe(true);
     });
 
-    it('should export reviews to CSV file', () => {
-      const result = exportReviews(testOutputDir, 'csv', testDir);
+    it('should export reviews to CSV file', async () => {
+      const result = await exportReviews(testOutputDir, 'csv', testDir);
 
       expect(result.format).toBe('csv');
       expect(result.outputPath).toContain('reviews-dataset.csv');

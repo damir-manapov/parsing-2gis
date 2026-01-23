@@ -2,7 +2,7 @@
 // Usage: bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name"
 
 import { getUploadInstructions, type HFConfig, prepareDataset } from '../src/publisher.js';
-import { PublisherRepository } from '../src/publisher-repository.js';
+import { PublisherRepository } from '../src/repos/index.js';
 import { parseArgs } from '../src/utils.js';
 
 async function main() {

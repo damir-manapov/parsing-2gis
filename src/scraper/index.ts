@@ -1,4 +1,4 @@
-import { ScraperRepository } from '../repository.js';
+import { ScraperRepository } from '../repos/index.js';
 import type { ScrapedOrganization, ScraperOptions } from '../types/index.js';
 import { Logger } from '../utils.js';
 import { closeBrowser, createBrowserSession } from './browser.js';
@@ -32,14 +32,24 @@ export async function scrapeSearchResults(
 
       logger.info(`Found ${listData.orgIds.length} orgs in list, will scrape ${orgIds.length}`);
 
+      // Get already scraped org IDs to skip
+      const alreadyScraped = await repository.getScrapedOrgIds(
+        options.scrapingMode as 'full' | 'full-with-reviews',
+      );
+      const orgIdsToScrape = orgIds.filter((id) => !alreadyScraped.has(id));
+      const skippedCount = orgIds.length - orgIdsToScrape.length;
+      if (skippedCount > 0) {
+        logger.info(`Skipping ${skippedCount} already scraped orgs`);
+      }
+
       let successCount = 0;
       let failureCount = 0;
 
-      for (let i = 0; i < orgIds.length; i++) {
-        const orgId = orgIds[i];
+      for (let i = 0; i < orgIdsToScrape.length; i++) {
+        const orgId = orgIdsToScrape[i];
         if (!orgId) continue;
 
-        logger.progress(i + 1, orgIds.length, `Processing org: ${orgId}`);
+        logger.progress(i + 1, orgIdsToScrape.length, `Processing org: ${orgId}`);
 
         const orgUrl = `https://2gis.ru/moscow/firm/${orgId}`;
         const result = await withRetry(
@@ -62,7 +72,9 @@ export async function scrapeSearchResults(
         }
       }
 
-      logger.info(`Scraping from list complete: ${successCount} succeeded, ${failureCount} failed`);
+      logger.info(
+        `Scraping from list complete: ${successCount} succeeded, ${failureCount} failed, ${skippedCount} skipped`,
+      );
       await closeBrowser(browser, logger);
       return { organizations, rawData };
     }

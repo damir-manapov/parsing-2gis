@@ -21,8 +21,8 @@ if (!['jsonl', 'csv'].includes(format)) {
 
 console.log('📚 Collecting reviews...\n');
 
-try {
-  const result = exportReviews(args.output, format);
+async function main() {
+  const result = await exportReviews(args.output, format);
 
   console.log(`✅ Collected ${result.reviews.length} reviews with text and rating\n`);
   console.log(`📝 Exported to: ${result.outputPath}`);
@@ -40,7 +40,9 @@ try {
   }
 
   console.log('\n✅ Done!');
-} catch (error) {
+}
+
+main().catch((error) => {
   console.error('❌', error instanceof Error ? error.message : String(error));
   process.exit(1);
-}
+});

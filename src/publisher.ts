@@ -3,7 +3,7 @@
  * Generates dataset cards and upload instructions for reviews dataset
  */
 
-import type { PrepareResult, PublisherRepository, PublishStats } from './publisher-repository.js';
+import type { PrepareResult, PublisherRepository, PublishStats } from './repos/index.js';
 
 export type { PublishStats, PrepareResult };
 

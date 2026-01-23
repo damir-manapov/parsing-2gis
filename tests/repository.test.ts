@@ -1,6 +1,6 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ScraperRepository } from '../src/repository.js';
+import { ScraperRepository } from '../src/repos/index.js';
 import { Logger } from '../src/utils.js';
 
 describe('ScraperRepository', () => {

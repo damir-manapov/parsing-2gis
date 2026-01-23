@@ -22,10 +22,10 @@ export class ScraperRepository {
     const slug = slugify(query);
     const metadata = this.createMetadata(query, responseTimeMs, organizations.length);
 
-    await saveRawData(`list-raw-${slug}-${timestamp}.json`, metadata, rawData);
+    await saveRawData(`list-raw-${slug}-${timestamp}.json`, metadata, rawData, 'list');
     this.logger.success(`List raw data saved (${rawData.length} items)`);
 
-    await saveParsedData(`list-${slug}-${timestamp}.json`, metadata, organizations);
+    await saveParsedData(`list-${slug}-${timestamp}.json`, metadata, organizations, 'list');
     this.logger.success(`List parsed data saved (${organizations.length} items)`);
   }
 
@@ -41,13 +41,19 @@ export class ScraperRepository {
     const slug = slugify(query);
     const metadata = this.createMetadata(query, responseTimeMs, organizations.length);
 
-    await saveRawData(`${prefix}-organizations-raw-${slug}-${timestamp}.json`, metadata, rawData);
+    await saveRawData(
+      `${prefix}-organizations-raw-${slug}-${timestamp}.json`,
+      metadata,
+      rawData,
+      prefix,
+    );
     this.logger.success(`Organizations raw data saved (${rawData.length} items)`);
 
     await saveParsedData(
       `${prefix}-organizations-${slug}-${timestamp}.json`,
       metadata,
       organizations,
+      prefix,
     );
     this.logger.success(`Organizations parsed data saved (${organizations.length} items)`);
   }
@@ -73,9 +79,10 @@ export class ScraperRepository {
     const metadata = this.createMetadata(query, responseTimeMs, allReviews.length);
 
     await saveParsedData(
-      `full-with-reviews-reviews-${slug}-${timestamp}.json`,
+      `reviews-${slug}-${timestamp}.json`,
       metadata,
       allReviews,
+      'full-with-reviews/reviews',
     );
     this.logger.success(`Reviews data saved (${allReviews.length} reviews)`);
   }
@@ -92,13 +99,19 @@ export class ScraperRepository {
     const prefix = includeReviews ? 'full-with-reviews' : 'full';
     const metadata = this.createMetadata(orgId, responseTimeMs, 1);
 
-    await saveRawData(`${prefix}-organization-${orgId}-raw-${timestamp}.json`, metadata, rawData);
+    await saveRawData(
+      `${prefix}-organization-${orgId}-raw-${timestamp}.json`,
+      metadata,
+      rawData,
+      'organizations',
+    );
     this.logger.success(`Organization raw data saved (ID: ${orgId})`);
 
     await saveParsedData(
       `${prefix}-organization-${orgId}-${timestamp}.json`,
       metadata,
       organization,
+      'organizations',
     );
     this.logger.success(`Organization parsed data saved (ID: ${orgId})`);
 
@@ -110,9 +123,10 @@ export class ScraperRepository {
       }));
 
       await saveParsedData(
-        `full-with-reviews-organization-${orgId}-reviews-${timestamp}.json`,
+        `organization-${orgId}-reviews-${timestamp}.json`,
         metadata,
         reviewsWithOrg,
+        'organizations/reviews',
       );
       this.logger.success(`Organization reviews saved (${reviewsWithOrg.length} reviews)`);
     }

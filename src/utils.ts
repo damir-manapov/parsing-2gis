@@ -60,9 +60,11 @@ export async function saveRawData(
   filename: string,
   metadata: Metadata,
   data: unknown,
+  subfolder = '',
 ): Promise<string> {
-  await mkdir('data/raw', { recursive: true });
-  const filePath = `data/raw/${filename}`;
+  const dirPath = subfolder ? `data/raw/${subfolder}` : 'data/raw';
+  await mkdir(dirPath, { recursive: true });
+  const filePath = `${dirPath}/${filename}`;
   await writeFile(filePath, JSON.stringify({ meta: metadata, data }, null, 2));
   return filePath;
 }
@@ -71,9 +73,11 @@ export async function saveParsedData(
   filename: string,
   metadata: Metadata,
   data: unknown,
+  subfolder = '',
 ): Promise<string> {
-  await mkdir('data/parsed', { recursive: true });
-  const filePath = `data/parsed/${filename}`;
+  const dirPath = subfolder ? `data/parsed/${subfolder}` : 'data/parsed';
+  await mkdir(dirPath, { recursive: true });
+  const filePath = `${dirPath}/${filename}`;
   await writeFile(filePath, JSON.stringify({ meta: metadata, data }, null, 2));
   return filePath;
 }

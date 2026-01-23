@@ -10,7 +10,8 @@ gitleaks detect --source . -v
 
 echo ""
 echo "=== Checking for outdated dependencies ==="
-OUTDATED=$(pnpm outdated --format json 2>/dev/null || true)
+# Use grep to extract only the JSON part, ignoring WARN messages
+OUTDATED=$(pnpm outdated --format json 2>&1 | grep -E '^\{.*\}$|^\[.*\]$' || echo "{}")
 if [ -n "$OUTDATED" ] && [ "$OUTDATED" != "{}" ] && [ "$OUTDATED" != "[]" ]; then
   echo "Outdated dependencies found:"
   pnpm outdated

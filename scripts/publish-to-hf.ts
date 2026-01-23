@@ -8,8 +8,8 @@ import {
   type PublishMode,
   prepareDataset,
 } from '../src/publisher.js';
-import { ScraperRepository } from '../src/repository.js';
-import { Logger, parseArgs } from '../src/utils.js';
+import { PublisherRepository } from '../src/publisher-repository.js';
+import { parseArgs } from '../src/utils.js';
 
 async function main() {
   const args = parseArgs(process.argv.slice(2), {
@@ -31,8 +31,7 @@ async function main() {
     process.exit(1);
   }
 
-  const logger = new Logger();
-  const repository = new ScraperRepository(logger);
+  const repository = new PublisherRepository();
 
   console.log('🚀 Preparing dataset for Hugging Face upload...');
   console.log(`   Dataset: ${config.datasetName}`);

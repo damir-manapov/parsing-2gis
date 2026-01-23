@@ -1,11 +1,9 @@
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { API_CONFIG } from './config.js';
 import { InvalidListFileError } from './errors.js';
 import type { ScrapedOrganization } from './types/index.js';
 import type { Logger, Metadata } from './utils.js';
 import { createMetadata, slugify } from './utils.js';
-
-export type PublishMode = 'list' | 'full' | 'full-with-reviews';
 
 export interface ListData {
   orgIds: string[];
@@ -226,42 +224,5 @@ export class ScraperRepository {
       totalResults,
       responseTimeMs,
     });
-  }
-
-  /**
-   * Collect data files for a given publish mode
-   */
-  async collectDataFiles(mode: PublishMode): Promise<string[]> {
-    const basePath = `data/parsed/${mode}`;
-
-    try {
-      if (mode === 'list') {
-        const files = await readdir(basePath);
-        return files.filter((f) => f.endsWith('.json')).map((f) => `${basePath}/${f}`);
-      }
-      const files = await readdir(`${basePath}/organizations`);
-      return files
-        .filter((f) => f.endsWith('.json') && !f.includes('manifest'))
-        .map((f) => `${basePath}/organizations/${f}`);
-    } catch {
-      return [];
-    }
-  }
-
-  /**
-   * Read and parse a JSON file
-   */
-  async readJsonFile(filePath: string): Promise<unknown> {
-    const content = await readFile(filePath, 'utf-8');
-    return JSON.parse(content);
-  }
-
-  /**
-   * Save dataset file (for HF publishing)
-   */
-  async saveDatasetFile(filename: string, content: string): Promise<string> {
-    const filePath = `data/${filename}`;
-    await writeFile(filePath, content);
-    return filePath;
   }
 }

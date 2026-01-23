@@ -1,16 +1,14 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { convertToJSONL, generateDatasetCard, getUploadInstructions } from '../src/publisher.js';
-import { ScraperRepository } from '../src/repository.js';
-import { Logger } from '../src/utils.js';
+import { PublisherRepository } from '../src/publisher-repository.js';
 
 const testListDir = 'data/parsed/list';
 const testFullDir = 'data/parsed/full/organizations';
 const testListFile = `${testListDir}/test-publisher-list.json`;
 const testOrgFile = `${testFullDir}/test-publisher-org.json`;
 
-const logger = new Logger();
-const repository = new ScraperRepository(logger);
+const repository = new PublisherRepository();
 
 describe('publisher', () => {
   beforeEach(() => {

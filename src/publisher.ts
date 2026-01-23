@@ -3,7 +3,7 @@
  * Converts scraped data to HF-compatible formats and generates dataset cards
  */
 
-import type { PublishMode, ScraperRepository } from './repository.js';
+import type { PublisherRepository, PublishMode } from './publisher-repository.js';
 
 export type { PublishMode };
 export type OutputFormat = 'jsonl' | 'parquet';
@@ -31,7 +31,7 @@ export interface PublishResult {
  */
 export async function convertToJSONL(
   files: string[],
-  repository: ScraperRepository,
+  repository: PublisherRepository,
 ): Promise<string> {
   const lines: string[] = [];
 
@@ -188,7 +188,7 @@ This dataset contains publicly available information from 2GIS. Users should res
  */
 export async function prepareDataset(
   config: HFConfig,
-  repository: ScraperRepository,
+  repository: PublisherRepository,
 ): Promise<PublishResult> {
   const files = await repository.collectDataFiles(config.mode);
 

@@ -2,6 +2,8 @@
 
 This guide explains how to publish your scraped 2GIS dataset to Hugging Face.
 
+**Example Published Dataset**: [tebuchet/org-reviews](https://huggingface.co/datasets/tebuchet/org-reviews)
+
 ## Prerequisites
 
 1. **Hugging Face Account**: Create an account at [huggingface.co](https://huggingface.co)
@@ -29,13 +31,13 @@ bun scripts/scrape.ts --from-list data/parsed/list/list-ресторан-*.json 
 
 ```bash
 # For basic organization data
-bun scripts/publish-to-hf.ts --dataset-name "your-username/2gis-moscow-restaurants" --mode full
+bun scripts/publish-to-hf.ts --dataset-name "tebuchet/org-reviews" --mode full
 
 # For organizations with reviews
-bun scripts/publish-to-hf.ts --dataset-name "your-username/2gis-restaurants-reviews" --mode full-with-reviews
+bun scripts/publish-to-hf.ts --dataset-name "tebuchet/2gis-reviews-extended" --mode full-with-reviews
 
 # For list data only
-bun scripts/publish-to-hf.ts --dataset-name "your-username/2gis-orgs-list" --mode list
+bun scripts/publish-to-hf.ts --dataset-name "tebuchet/2gis-orgs-list" --mode list
 ```
 
 This will create:
@@ -51,14 +53,14 @@ This will create:
 huggingface-cli login
 
 # Create repository (public)
-huggingface-cli repo create your-username/2gis-moscow-restaurants --type dataset
+huggingface-cli repo create tebuchet/org-reviews --type dataset
 
 # Or create private repository
-huggingface-cli repo create your-username/2gis-moscow-restaurants --type dataset --private
+huggingface-cli repo create tebuchet/2gis-private --type dataset --private
 
 # Upload dataset
-huggingface-cli upload your-username/2gis-moscow-restaurants data/hf-dataset-full.jsonl train.jsonl
-huggingface-cli upload your-username/2gis-moscow-restaurants data/hf-README.md README.md
+huggingface-cli upload tebuchet/org-reviews data/hf-dataset-full.jsonl train.jsonl
+huggingface-cli upload tebuchet/org-reviews data/hf-README.md README.md
 ```
 
 #### Option B: Using Python
@@ -70,7 +72,7 @@ api = HfApi()
 
 # Create repository
 api.create_repo(
-    repo_id="your-username/2gis-moscow-restaurants",
+    repo_id="tebuchet/org-reviews",
     repo_type="dataset",
     private=False  # Set to True for private repo
 )
@@ -79,14 +81,14 @@ api.create_repo(
 api.upload_file(
     path_or_fileobj="data/hf-dataset-full.jsonl",
     path_in_repo="train.jsonl",
-    repo_id="your-username/2gis-moscow-restaurants",
+    repo_id="tebuchet/org-reviews",
     repo_type="dataset"
 )
 
 api.upload_file(
     path_or_fileobj="data/hf-README.md",
     path_in_repo="README.md",
-    repo_id="your-username/2gis-moscow-restaurants",
+    repo_id="tebuchet/org-reviews",
     repo_type="dataset"
 )
 ```
@@ -129,6 +131,7 @@ huggingface-cli upload your-username/2gis-moscow-restaurants data/hf-dataset-ful
 ## Dataset Naming Conventions
 
 Good dataset names:
+- `tebuchet/org-reviews` ✅ (Published example)
 - `username/2gis-moscow-restaurants` - Clear, specific
 - `username/2gis-organizations-russia` - Geographic scope
 - `username/2gis-poi-with-reviews` - Content description
@@ -144,8 +147,8 @@ Avoid:
 
 ```python
 from datasets import load_dataset
-
-# Load dataset
+the published dataset
+dataset = load_dataset("tebuchet/org-review
 dataset = load_dataset("your-username/2gis-moscow-restaurants")
 
 # Access data
@@ -159,7 +162,7 @@ for org in dataset['train']:
 import pandas as pd
 from datasets import load_dataset
 
-# Load as DataFrame
+# Load as DataFrametebuchet/org-review
 dataset = load_dataset("your-username/2gis-moscow-restaurants")
 df = pd.DataFrame(dataset['train'])
 

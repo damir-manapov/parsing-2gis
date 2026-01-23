@@ -71,14 +71,16 @@ After scraping data, you can publish it as a dataset:
 
 ```bash
 # Prepare dataset for upload
-bun scripts/publish-to-hf.ts --dataset-name "username/2gis-moscow-restaurants" --mode full
+bun scripts/publish-to-hf.ts --dataset-name "tebuchet/org-reviews" --mode full
 
 # Follow the instructions to upload using HF CLI
 huggingface-cli login
-huggingface-cli repo create username/2gis-moscow-restaurants --type dataset
-huggingface-cli upload username/2gis-moscow-restaurants data/hf-dataset-full.jsonl train.jsonl
-huggingface-cli upload username/2gis-moscow-restaurants data/hf-README.md README.md
+huggingface-cli repo create tebuchet/org-reviews --type dataset
+huggingface-cli upload tebuchet/org-reviews data/hf-dataset-full.jsonl train.jsonl
+huggingface-cli upload tebuchet/org-reviews data/hf-README.md README.md
 ```
+
+**Published dataset**: [tebuchet/org-reviews](https://huggingface.co/datasets/tebuchet/org-reviews)
 
 See [Publishing to Hugging Face Guide](docs/PUBLISHING_TO_HF.md) for detailed instructions.
 

@@ -92,14 +92,70 @@ async function main() {
   });
 
   const slug = slugify(options.query);
+  const modePrefix = options.scrapingMode;
 
-  // Save raw data (API responses + initialState)
-  await saveRawData(`search-scrape-raw-${slug}-${fileTimestamp}.json`, metadata, rawData);
-  logger.success(`Raw data saved (${rawData.length} items)`);
+  console.log('\n============================================================');
+  console.log('RESULTS SUMMARY');
+  console.log('============================================================\n');
 
-  // Save parsed organizations
-  await saveParsedData(`search-scrape-${slug}-${fileTimestamp}.json`, metadata, organizations);
-  logger.success(`Parsed data saved (${organizations.length} items)`);
+  // Save based on scraping mode
+  if (options.scrapingMode === 'list') {
+    // List mode: save basic list data
+    await saveRawData(`${modePrefix}-raw-${slug}-${fileTimestamp}.json`, metadata, rawData);
+    logger.success(`List raw data saved (${rawData.length} items)`);
+
+    await saveParsedData(`${modePrefix}-${slug}-${fileTimestamp}.json`, metadata, organizations);
+    logger.success(`List parsed data saved (${organizations.length} items)`);
+  } else if (options.scrapingMode === 'full') {
+    // Full mode: save organization details from main pages
+    await saveRawData(
+      `${modePrefix}-organizations-raw-${slug}-${fileTimestamp}.json`,
+      metadata,
+      rawData,
+    );
+    logger.success(`Organizations raw data saved (${rawData.length} items)`);
+
+    await saveParsedData(
+      `${modePrefix}-organizations-${slug}-${fileTimestamp}.json`,
+      metadata,
+      organizations,
+    );
+    logger.success(`Organizations parsed data saved (${organizations.length} items)`);
+  } else if (options.scrapingMode === 'full-with-reviews') {
+    // Full-with-reviews mode: save organizations and reviews separately
+    await saveRawData(
+      `${modePrefix}-organizations-raw-${slug}-${fileTimestamp}.json`,
+      metadata,
+      rawData,
+    );
+    logger.success(`Organizations raw data saved (${rawData.length} items)`);
+
+    await saveParsedData(
+      `${modePrefix}-organizations-${slug}-${fileTimestamp}.json`,
+      metadata,
+      organizations,
+    );
+    logger.success(`Organizations parsed data saved (${organizations.length} items)`);
+
+    // Extract and save reviews separately
+    const allReviews = organizations.flatMap((org) => {
+      if (!org.reviews || org.reviews.length === 0) return [];
+      return org.reviews.map((review) => ({
+        ...review,
+        organizationId: org.orgId,
+        organizationName: org.name,
+      }));
+    });
+
+    if (allReviews.length > 0) {
+      await saveParsedData(
+        `${modePrefix}-reviews-${slug}-${fileTimestamp}.json`,
+        { ...metadata, totalResults: allReviews.length },
+        allReviews,
+      );
+      logger.success(`Reviews data saved (${allReviews.length} reviews)`);
+    }
+  }
 
   console.log(`\n${'='.repeat(80)}`);
   logger.success('Scraping completed successfully!');

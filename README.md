@@ -65,6 +65,23 @@ bun scripts/scrape.ts --org-id 70000001044609041 --mode full
 bun scripts/scrape.ts --org-id 70000001044609041 --mode full-with-reviews --max-reviews 150
 ```
 
+### Publishing to Hugging Face
+
+After scraping data, you can publish it as a dataset:
+
+```bash
+# Prepare dataset for upload
+bun scripts/publish-to-hf.ts --dataset-name "username/2gis-moscow-restaurants" --mode full
+
+# Follow the instructions to upload using HF CLI
+huggingface-cli login
+huggingface-cli repo create username/2gis-moscow-restaurants --type dataset
+huggingface-cli upload username/2gis-moscow-restaurants data/hf-dataset-full.jsonl train.jsonl
+huggingface-cli upload username/2gis-moscow-restaurants data/hf-README.md README.md
+```
+
+See [Publishing to Hugging Face Guide](docs/PUBLISHING_TO_HF.md) for detailed instructions.
+
 ### Scraper Options
 
 - `--query` - Search query (required for list mode)

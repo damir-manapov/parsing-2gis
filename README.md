@@ -38,7 +38,13 @@ This creates a list file in `data/parsed/list/` with organization IDs.
 
 **Stage 2: Scrape full details from saved list**
 ```bash
-bun scripts/scrape.ts --from-list data/parsed/list/list-кальян-2026-01-23T14-25-11-633Z.json --mode full --max-records 10
+# Single list file
+bun scripts/scrape.ts --from-list data/parsed/list/list-кальян-2026-01-23T14-25-11-633Z.json --mode full-with-reviews --max-reviews 100
+
+# Or batch process all list files
+for f in data/parsed/list/*.json; do
+  bun scripts/scrape.ts --from-list "$f" --mode full-with-reviews --max-reviews 100
+done
 ```
 
 ### Single-Stage Workflow

@@ -1,4 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { API_CONFIG } from './config.js';
+import { InvalidListFileError } from './errors.js';
 import type { ScrapedOrganization } from './types/index.js';
 import type { Logger, Metadata } from './utils.js';
 import { createMetadata, slugify } from './utils.js';
@@ -62,7 +64,7 @@ export class ScraperRepository {
       };
     }
 
-    throw new Error('Invalid list file format');
+    throw new InvalidListFileError('Invalid list file format', filePath);
   }
 
   async saveListData(
@@ -215,9 +217,9 @@ export class ScraperRepository {
 
   private createMetadata(query: string, responseTimeMs: number, totalResults: number): Metadata {
     return createMetadata({
-      apiVersion: 'playwright-scrape',
-      endpoint: 'search-scrape',
-      statusCode: 200,
+      apiVersion: API_CONFIG.version,
+      endpoint: API_CONFIG.endpoint,
+      statusCode: API_CONFIG.statusCode,
       query,
       totalResults,
       responseTimeMs,

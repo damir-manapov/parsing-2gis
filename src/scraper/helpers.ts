@@ -1,4 +1,5 @@
 import type { Page } from 'playwright';
+import { REQUEST_BLOCKING } from '../config.js';
 import type { DataExtractionResult } from '../types/index.js';
 import type { Logger } from '../utils.js';
 import { sleep } from '../utils.js';
@@ -10,21 +11,14 @@ export async function setupRequestBlocking(page: Page, logger: Logger) {
     const resourceType = route.request().resourceType();
 
     // Block images, fonts, media, stylesheets to speed up scraping
-    if (['image', 'font', 'media', 'stylesheet'].includes(resourceType)) {
+    // biome-ignore lint/suspicious/noExplicitAny: resourceType needs runtime type checking
+    if (REQUEST_BLOCKING.resourceTypes.includes(resourceType as any)) {
       route.abort();
       return;
     }
 
     // Block analytics, ads, and tracking
-    if (
-      url.includes('google-analytics') ||
-      url.includes('googletagmanager') ||
-      url.includes('yandex.ru/metrika') ||
-      url.includes('mc.yandex.ru') ||
-      url.includes('doubleclick.net') ||
-      url.includes('/ads/') ||
-      url.includes('/metrics/')
-    ) {
+    if (REQUEST_BLOCKING.domains.some((domain) => url.includes(domain))) {
       route.abort();
       return;
     }

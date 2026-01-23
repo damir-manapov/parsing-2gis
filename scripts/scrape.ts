@@ -5,6 +5,7 @@
 // Or single org: bun scripts/scrape.ts --org-id 70000001044609041 --mode full
 // Modes: list (basic data only), full (detailed data), full-with-reviews (detailed data + reviews)
 
+import { DEFAULT_DELAYS, DEFAULT_LIMITS } from '../src/config.js';
 import { ScraperRepository } from '../src/repository.js';
 import { scrapeSearchResults } from '../src/scraper/index.js';
 import type { ScrapedOrganization, ScraperOptions } from '../src/types/index.js';
@@ -112,12 +113,12 @@ async function main() {
     query: 'кальян',
     'org-id': '',
     'from-list': '',
-    delay: '2000',
-    'max-records': '50',
-    'max-retries': '3',
+    delay: String(DEFAULT_DELAYS.betweenRequests),
+    'max-records': String(DEFAULT_LIMITS.maxRecords),
+    'max-retries': String(DEFAULT_LIMITS.maxRetries),
     headless: 'true',
     mode: 'full',
-    'max-reviews': '100',
+    'max-reviews': String(DEFAULT_LIMITS.maxReviewsPerOrg),
   });
 
   const options: ScraperOptions = {

@@ -72,13 +72,15 @@ export interface ScrapedOrganization {
   reviews?: Review[];
 }
 
+export type ScrapingMode = 'list' | 'full' | 'full-with-reviews';
+
 export interface ScraperOptions {
   query: string;
   delayMs: number;
   maxRecords: number;
   maxRetries: number;
   headless: boolean;
-  includeReviews: boolean;
+  scrapingMode: ScrapingMode;
   maxReviewsPerOrg: number;
 }
 

@@ -156,8 +156,8 @@ async function scrapeSingleOrganization(
   // Extract organization data
   const organization = extractOrganization(item, logger);
 
-  // Scrape reviews if requested
-  if (options.includeReviews && item.id) {
+  // Scrape reviews if in full-with-reviews mode
+  if (options.scrapingMode === 'full-with-reviews' && item.id) {
     const reviewsStart = Date.now();
     const reviews = await scrapeReviews(page, item.id, options.maxReviewsPerOrg, logger);
     const reviewsTime = Date.now() - reviewsStart;
@@ -171,13 +171,14 @@ async function scrapeSingleOrganization(
   return { organization, rawData };
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Main orchestration function handles multiple scraping modes
 export async function scrapeSearchResults(
   options: ScraperOptions,
   // biome-ignore lint/suspicious/noExplicitAny: Raw 2GIS data structure is dynamic
 ): Promise<{ organizations: ScrapedOrganization[]; rawData: any[] }> {
   const logger = new Logger();
   logger.info(
-    `Starting scraper with options: maxRecords=${options.maxRecords}, delay=${options.delayMs}ms, retries=${options.maxRetries}, headless=${options.headless}${options.includeReviews ? `, reviews=${options.maxReviewsPerOrg}` : ''}`,
+    `Starting scraper with options: maxRecords=${options.maxRecords}, delay=${options.delayMs}ms, retries=${options.maxRetries}, headless=${options.headless}, mode=${options.scrapingMode}${options.scrapingMode === 'full-with-reviews' ? `, reviews=${options.maxReviewsPerOrg}` : ''}`,
   );
 
   const browser = await chromium.launch({ headless: options.headless });
@@ -251,29 +252,78 @@ export async function scrapeSearchResults(
     let successCount = 0;
     let failureCount = 0;
 
-    for (let i = 0; i < totalToScrape; i++) {
-      const url = firmUrls[i];
-      if (!url) continue;
+    // For 'list' mode, extract basic data from search results without navigation
+    if (options.scrapingMode === 'list') {
+      logger.info('List mode: extracting basic data from search results');
 
-      logger.progress(i + 1, totalToScrape, `Processing: ${url.split('/').pop()}`);
+      const basicData = await page.evaluate(() => {
+        // biome-ignore lint/suspicious/noExplicitAny: Search result items have dynamic structure
+        const results: any[] = [];
+        const links = document.querySelectorAll('a[href*="/moscow/firm/"]');
 
-      // Use retry wrapper for each firm page
-      const result = await withRetry(
-        async () => scrapeSingleOrganization(page, url, logger, options),
-        options.maxRetries,
-        logger,
-        'Scraping organization',
-      );
+        for (const link of Array.from(links).slice(0, 50)) {
+          const container =
+            link.closest('[data-id]') || link.closest('article') || link.parentElement;
+          const firmId = link.getAttribute('href')?.match(/firm\/(\d+)/)?.[1];
 
-      if (result) {
-        organizations.push(result.organization);
-        rawData.push(result.rawData);
-        logger.success(
-          `${result.organization.name} | Phone: ${result.organization.phone ?? '-'} | Rating: ${result.organization.rating ?? '-'}`,
-        );
+          if (firmId) {
+            results.push({
+              firmId,
+              url: link.getAttribute('href'),
+              name: link.textContent?.trim() || '',
+              container: container?.outerHTML || '',
+            });
+          }
+        }
+
+        return results;
+      });
+
+      for (let i = 0; i < Math.min(basicData.length, totalToScrape); i++) {
+        const item = basicData[i];
+        if (!item) continue;
+
+        logger.progress(i + 1, totalToScrape, `Processing: ${item.firmId}`);
+
+        // Extract minimal data from search results
+        const organization: ScrapedOrganization = {
+          name: item.name,
+          address: '',
+          rubrics: [],
+          orgId: item.firmId,
+        };
+
+        organizations.push(organization);
+        rawData.push(item);
+        logger.success(`${organization.name} (list mode)`);
         successCount++;
-      } else {
-        failureCount++;
+      }
+    } else {
+      // For 'full' and 'full-with-reviews' modes, navigate to each page
+      for (let i = 0; i < totalToScrape; i++) {
+        const url = firmUrls[i];
+        if (!url) continue;
+
+        logger.progress(i + 1, totalToScrape, `Processing: ${url.split('/').pop()}`);
+
+        // Use retry wrapper for each firm page
+        const result = await withRetry(
+          async () => scrapeSingleOrganization(page, url, logger, options),
+          options.maxRetries,
+          logger,
+          'Scraping organization',
+        );
+
+        if (result) {
+          organizations.push(result.organization);
+          rawData.push(result.rawData);
+          logger.success(
+            `${result.organization.name} | Phone: ${result.organization.phone ?? '-'} | Rating: ${result.organization.rating ?? '-'}`,
+          );
+          successCount++;
+        } else {
+          failureCount++;
+        }
       }
     }
 

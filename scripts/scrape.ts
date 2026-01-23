@@ -1,4 +1,5 @@
-// Run with: bun scripts/scrape-search.ts [--query "кальян"] [--delay 2000] [--max-records 50] [--headless]
+// Run with: bun scripts/scrape.ts [--query "кальян"] [--delay 2000] [--max-records 50] [--mode full] [--headless true]
+// Modes: list (basic data only), full (detailed data), full-with-reviews (detailed data + reviews)
 // Uses Playwright to scrape 2GIS search results and detail pages
 
 import { scrapeSearchResults } from '../src/scraper/index.js';
@@ -21,7 +22,7 @@ async function main() {
     'max-records': '50',
     'max-retries': '3',
     headless: 'true',
-    'include-reviews': 'false',
+    mode: 'full',
     'max-reviews': '100',
   });
 
@@ -31,14 +32,22 @@ async function main() {
     maxRecords: Number(args['max-records']),
     maxRetries: Number(args['max-retries']),
     headless: args.headless === 'true',
-    includeReviews: args['include-reviews'] === 'true',
+    scrapingMode: args.mode as 'list' | 'full' | 'full-with-reviews',
     maxReviewsPerOrg: Number(args['max-reviews']),
   };
+
+  // Validate mode
+  if (!['list', 'full', 'full-with-reviews'].includes(options.scrapingMode)) {
+    console.error(
+      `Invalid mode "${options.scrapingMode}". Must be one of: list, full, full-with-reviews`,
+    );
+    process.exit(1);
+  }
 
   const logger = new Logger();
   logger.info(`Scraping 2GIS for "${options.query}" in Moscow`);
   logger.info(
-    `Configuration: delay=${options.delayMs}ms, maxRecords=${options.maxRecords}, retries=${options.maxRetries}${options.includeReviews ? `, reviews=${options.maxReviewsPerOrg}` : ''}`,
+    `Configuration: delay=${options.delayMs}ms, maxRecords=${options.maxRecords}, retries=${options.maxRetries}, mode=${options.scrapingMode}${options.scrapingMode === 'full-with-reviews' ? `, reviews=${options.maxReviewsPerOrg}` : ''}`,
   );
 
   const startTime = Date.now();

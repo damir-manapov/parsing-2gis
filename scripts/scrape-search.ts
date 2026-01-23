@@ -19,6 +19,112 @@ import {
 const DEFAULT_NAVIGATION_TIMEOUT = 30000;
 const DEFAULT_WAIT_TIMEOUT = 60000;
 
+// Helper functions for data extraction
+function extractAddressDetails(item: any, logger: Logger) {
+  const result = {
+    address: '',
+    addressComment: undefined as string | undefined,
+    postcode: undefined as string | undefined,
+    city: undefined as string | undefined,
+    district: undefined as string | undefined,
+    region: undefined as string | undefined,
+    country: undefined as string | undefined,
+  };
+
+  try {
+    result.address = item.address_name ?? '';
+    result.addressComment = item.address_comment;
+
+    if (item.address) {
+      const addr = item.address;
+      result.postcode = addr.postcode;
+
+      // Extract address components
+      if (addr.components) {
+        for (const component of addr.components) {
+          switch (component.type) {
+            case 'city':
+              result.city = component.name;
+              break;
+            case 'district':
+              result.district = component.name;
+              break;
+            case 'region':
+              result.region = component.name;
+              break;
+            case 'country':
+              result.country = component.name;
+              break;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    logger.warn(`Failed to extract address details: ${e}`);
+  }
+
+  return result;
+}
+
+function extractCoordinates(item: any, logger: Logger): Coordinates | undefined {
+  try {
+    if (item.point?.lat && item.point?.lon) {
+      return {
+        lat: item.point.lat,
+        lon: item.point.lon,
+      };
+    }
+  } catch (e) {
+    logger.debug(`Failed to extract coordinates: ${e}`);
+  }
+  return undefined;
+}
+
+function extractMetroStations(item: any, logger: Logger): MetroStation[] | undefined {
+  try {
+    if (item.links?.nearest_stations && Array.isArray(item.links.nearest_stations)) {
+      const stations = item.links.nearest_stations
+        .slice(0, 3) // Top 3 closest
+        .map((station: any) => ({
+          name: station.name,
+          distance: station.distance,
+          line: station.comment,
+          color: station.color,
+        }))
+        .filter((s: any) => s.name);
+
+      return stations.length > 0 ? stations : undefined;
+    }
+  } catch (e) {
+    logger.debug(`Failed to extract metro stations: ${e}`);
+  }
+  return undefined;
+}
+
+function extractReviewSummary(item: any, logger: Logger) {
+  try {
+    if (item.reviews) {
+      const summary: any = {
+        rating: item.reviews.rating || 0,
+        reviewCount: item.reviews.review_count || 0,
+        generalRating: item.reviews.general_rating,
+        generalReviewCount: item.reviews.general_review_count,
+        orgRating: item.reviews.org_rating,
+        orgReviewCount: item.reviews.org_review_count,
+        sources: item.reviews.items?.map((source: any) => ({
+          tag: source.tag,
+          rating: source.rating,
+          reviewCount: source.review_count,
+        })),
+      };
+      return summary;
+    }
+  } catch (e) {
+    logger.debug(`Failed to extract review summary: ${e}`);
+  }
+  return undefined;
+}
+
 interface MetroStation {
   name: string;
   distance: number;
@@ -109,6 +215,107 @@ interface DataExtractionResult {
   fullData?: any; // Store the full API response or initialState
 }
 
+// Helper function to extract reviews from initialState
+async function extractReviewsFromInitialState(page: Page): Promise<Review[]> {
+  return await page.evaluate(() => {
+    const state = (window as any).initialState;
+    if (!state?.data?.review) return [];
+
+    const reviewData = state.data.review;
+    const allReviews = [];
+
+    for (const [id, reviewObj] of Object.entries(reviewData)) {
+      const review = (reviewObj as any)?.data;
+      if (review) {
+        allReviews.push({
+          id,
+          text: review.text || '',
+          rating: review.rating || 0,
+          dateCreated: review.date_created || '',
+          dateEdited: review.date_edited,
+          author: review.user?.name,
+          authorId: review.user?.id,
+          commentsCount: review.comments_count,
+          source: review.source,
+          likes: review.likes_count,
+          dislikes: review.dislikes_count,
+        });
+      }
+    }
+
+    return allReviews;
+  });
+}
+
+// Helper function to extract reviews from DOM (pagination)
+async function extractReviewsFromDOM(page: Page): Promise<Review[]> {
+  return await page.evaluate(() => {
+    // Find all review containers
+    // Strategy: Find divs that contain both the review text link and author element
+    const reviewLinks = document.querySelectorAll('a._1msln3t');
+    const reviewItems: any[] = [];
+    const seenTexts = new Set<string>();
+
+    for (let i = 0; i < reviewLinks.length; i++) {
+      const link = reviewLinks[i];
+      if (!link) continue;
+
+      const text = link.textContent?.trim() || '';
+      if (!text || seenTexts.has(text)) continue;
+
+      // Find the review container (go up from the link)
+      let reviewContainer = link.parentElement;
+      for (let i = 0; i < 10 && reviewContainer; i++) {
+        // Look for container with author element
+        if (reviewContainer.querySelector('._1pi8bc0')) {
+          break;
+        }
+        reviewContainer = reviewContainer.parentElement;
+      }
+
+      if (!reviewContainer) continue;
+
+      // Skip official responses (company answers to reviews)
+      const isOfficialResponse = reviewContainer.querySelector('._1evjsdb'); // Contains "официальный ответ"
+      if (isOfficialResponse) continue;
+
+      // Extract author name
+      const authorEl = reviewContainer.querySelector('._1pi8bc0');
+      const authorText = authorEl?.textContent?.trim() || '';
+      const authorMatch = authorText.match(/^(.+?)​(\\d+)\\s+отзыв/);
+      const author = authorMatch ? authorMatch[1] : authorText.split('​')[0];
+
+      // Extract date
+      const dateEl = reviewContainer.querySelector('._a5f6uz');
+      const dateCreated = dateEl?.textContent?.trim() || '';
+
+      // Extract rating (count filled star SVGs)
+      const stars = reviewContainer.querySelectorAll('svg[fill="currentColor"]');
+      const rating = stars.length;
+
+      // Generate a pseudo ID
+      const id = `dom_${author}_${dateCreated}_${text.slice(0, 20)}`;
+
+      reviewItems.push({
+        id,
+        text,
+        rating,
+        dateCreated,
+        author,
+        authorId: undefined,
+        commentsCount: undefined,
+        source: null,
+        likes: undefined,
+        dislikes: undefined,
+      });
+
+      seenTexts.add(text);
+    }
+
+    return reviewItems;
+  });
+}
+
 // Block unnecessary resources to improve performance
 async function setupRequestBlocking(page: Page, logger: Logger) {
   await page.route('**/*', (route) => {
@@ -188,45 +395,8 @@ function extractOrganization(item: any, logger: Logger): ScrapedOrganization {
     }
 
     // Extract address hierarchy
-    let address = '';
-    let addressComment: string | undefined;
-    let postcode: string | undefined;
-    let city: string | undefined;
-    let district: string | undefined;
-    let region: string | undefined;
-    let country: string | undefined;
-
-    try {
-      address = item.address_name ?? '';
-      addressComment = item.address_comment;
-
-      if (item.address) {
-        const addr = item.address;
-        postcode = addr.postcode;
-
-        // Extract address components
-        if (addr.components) {
-          for (const component of addr.components) {
-            switch (component.type) {
-              case 'city':
-                city = component.name;
-                break;
-              case 'district':
-                district = component.name;
-                break;
-              case 'region':
-                region = component.name;
-                break;
-              case 'country':
-                country = component.name;
-                break;
-            }
-          }
-        }
-      }
-    } catch (e) {
-      logger.warn(`Failed to extract address details: ${e}`);
-    }
+    const addressDetails = extractAddressDetails(item, logger);
+    const { address, addressComment, postcode, city, district, region, country } = addressDetails;
 
     // Extract schedule
     let schedule: string | undefined;
@@ -271,69 +441,13 @@ function extractOrganization(item: any, logger: Logger): ScrapedOrganization {
     }
 
     // Extract coordinates
-    let coordinates: Coordinates | undefined;
-    try {
-      if (item.point?.lat && item.point?.lon) {
-        coordinates = {
-          lat: item.point.lat,
-          lon: item.point.lon,
-        };
-      }
-    } catch (e) {
-      logger.debug(`Failed to extract coordinates: ${e}`);
-    }
+    const coordinates = extractCoordinates(item, logger);
 
     // Extract review summary
-    let reviewSummary:
-      | {
-          rating: number;
-          reviewCount: number;
-          generalRating?: number;
-          generalReviewCount?: number;
-          orgRating?: number;
-          orgReviewCount?: number;
-          sources?: Array<{ tag: string; rating?: number; reviewCount?: number }>;
-        }
-      | undefined;
-    try {
-      if (item.reviews) {
-        reviewSummary = {
-          rating: item.reviews.rating || 0,
-          reviewCount: item.reviews.review_count || 0,
-          generalRating: item.reviews.general_rating,
-          generalReviewCount: item.reviews.general_review_count,
-          orgRating: item.reviews.org_rating,
-          orgReviewCount: item.reviews.org_review_count,
-          sources: item.reviews.items?.map((source: any) => ({
-            tag: source.tag,
-            rating: source.rating,
-            reviewCount: source.review_count,
-          })),
-        };
-      }
-    } catch (e) {
-      logger.debug(`Failed to extract review summary: ${e}`);
-    }
+    const reviewSummary = extractReviewSummary(item, logger);
 
     // Extract nearest metro stations
-    let nearestMetro: MetroStation[] | undefined;
-    try {
-      if (item.links?.nearest_stations && Array.isArray(item.links.nearest_stations)) {
-        nearestMetro = item.links.nearest_stations
-          .slice(0, 3) // Top 3 closest
-          .map((station: any) => ({
-            name: station.name,
-            distance: station.distance,
-            line: station.comment,
-            color: station.color,
-          }))
-          .filter((s: any) => s.name);
-
-        if (nearestMetro && nearestMetro.length === 0) nearestMetro = undefined;
-      }
-    } catch (e) {
-      logger.debug(`Failed to extract metro stations: ${e}`);
-    }
+    const nearestMetro = extractMetroStations(item, logger);
 
     // Extract payment methods and features
     let paymentMethods: string[] | undefined;
@@ -503,34 +617,7 @@ async function scrapeReviews(
     await page.waitForTimeout(500);
 
     // Step 1: Extract initial reviews from initialState (fast, first 50)
-    const initialReviews = await page.evaluate(() => {
-      const state = (window as any).initialState;
-      if (!state?.data?.review) return [];
-
-      const reviewData = state.data.review;
-      const allReviews = [];
-
-      for (const [id, reviewObj] of Object.entries(reviewData)) {
-        const review = (reviewObj as any)?.data;
-        if (review) {
-          allReviews.push({
-            id,
-            text: review.text || '',
-            rating: review.rating || 0,
-            dateCreated: review.date_created || '',
-            dateEdited: review.date_edited,
-            author: review.user?.name,
-            authorId: review.user?.id,
-            commentsCount: review.comments_count,
-            source: review.source,
-            likes: review.likes_count,
-            dislikes: review.dislikes_count,
-          });
-        }
-      }
-
-      return allReviews;
-    });
+    const initialReviews = await extractReviewsFromInitialState(page);
 
     // Add initial reviews
     for (const review of initialReviews) {
@@ -564,71 +651,7 @@ async function scrapeReviews(
         await page.waitForTimeout(1000);
 
         // Extract reviews from DOM
-        const domReviews = await page.evaluate(() => {
-          // Find all review containers
-          // Strategy: Find divs that contain both the review text link and author element
-          const reviewLinks = document.querySelectorAll('a._1msln3t');
-          const reviewItems: any[] = [];
-          const seenTexts = new Set<string>();
-
-          for (let i = 0; i < reviewLinks.length; i++) {
-            const link = reviewLinks[i];
-            if (!link) continue;
-
-            const text = link.textContent?.trim() || '';
-            if (!text || seenTexts.has(text)) continue;
-
-            // Find the review container (go up from the link)
-            let reviewContainer = link.parentElement;
-            for (let i = 0; i < 10 && reviewContainer; i++) {
-              // Look for container with author element
-              if (reviewContainer.querySelector('._1pi8bc0')) {
-                break;
-              }
-              reviewContainer = reviewContainer.parentElement;
-            }
-
-            if (!reviewContainer) continue;
-
-            // Skip official responses (company answers to reviews)
-            const isOfficialResponse = reviewContainer.querySelector('._1evjsdb'); // Contains "официальный ответ"
-            if (isOfficialResponse) continue;
-
-            // Extract author name
-            const authorEl = reviewContainer.querySelector('._1pi8bc0');
-            const authorText = authorEl?.textContent?.trim() || '';
-            const authorMatch = authorText.match(/^(.+?)​(\\d+)\\s+отзыв/);
-            const author = authorMatch ? authorMatch[1] : authorText.split('​')[0];
-
-            // Extract date
-            const dateEl = reviewContainer.querySelector('._a5f6uz');
-            const dateCreated = dateEl?.textContent?.trim() || '';
-
-            // Extract rating (count filled star SVGs)
-            const stars = reviewContainer.querySelectorAll('svg[fill="currentColor"]');
-            const rating = stars.length;
-
-            // Generate a pseudo ID
-            const id = `dom_${author}_${dateCreated}_${text.slice(0, 20)}`;
-
-            reviewItems.push({
-              id,
-              text,
-              rating,
-              dateCreated,
-              author,
-              authorId: undefined,
-              commentsCount: undefined,
-              source: null,
-              likes: undefined,
-              dislikes: undefined,
-            });
-
-            seenTexts.add(text);
-          }
-
-          return reviewItems;
-        });
+        const domReviews = await extractReviewsFromDOM(page);
 
         // Add new reviews
         let addedCount = 0;

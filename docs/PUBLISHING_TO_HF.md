@@ -8,8 +8,12 @@ This guide explains how to publish your scraped 2GIS dataset to Hugging Face.
 
 1. **Hugging Face Account**: Create an account at [huggingface.co](https://huggingface.co)
 2. **Access Token**: Get your token from [Settings → Access Tokens](https://huggingface.co/settings/tokens)
-3. **Install HF CLI**: 
+3. **Install HF CLI** (choose one):
    ```bash
+   # Using uv (recommended)
+   uv tool install huggingface_hub
+   
+   # Or using pip
    pip install huggingface_hub[cli]
    ```
 
@@ -23,22 +27,34 @@ First, scrape some data:
 # Stage 1: Collect org IDs
 bun scripts/scrape.ts --query "ресторан" --mode list --max-records 100
 
-# Stage 2: Get full details
-bun scripts/scrape.ts --from-list data/parsed/list/list-ресторан-*.json --mode full --max-records 50
+# Stage 2: Get full details with reviews
+bun scripts/scrape.ts --from-list data/parsed/list/list-ресторан-*.json --mode full-with-reviews --max-reviews 100
+
+# Stage 3: Export reviews dataset
+bun scripts/export-reviews-dataset.ts
 ```
 
 ### 2. Convert to HF Format
 
 ```bash
-# For basic organization data
-bun scripts/publish-to-hf.ts --dataset-name "tebuchet/org-reviews" --mode full
+# For reviews dataset (recommended for ML/sentiment analysis)
+bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name" --mode reviews
 
-# For organizations with reviews
-bun scripts/publish-to-hf.ts --dataset-name "tebuchet/2gis-reviews-extended" --mode full-with-reviews
+# For basic organization data
+bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name" --mode full
+
+# For organizations with reviews embedded
+bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name" --mode full-with-reviews
 
 # For list data only
-bun scripts/publish-to-hf.ts --dataset-name "tebuchet/2gis-orgs-list" --mode list
+bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name" --mode list
 ```
+
+Available modes:
+- `reviews` - Simple text + rating pairs (ideal for sentiment analysis)
+- `full` - Organization details only
+- `full-with-reviews` - Organizations with embedded reviews
+- `list` - Basic organization list from search
 
 This will create:
 - `data/hf-dataset-{mode}.jsonl` - Your dataset in JSONL format
@@ -46,24 +62,35 @@ This will create:
 
 ### 3. Upload to Hugging Face
 
-#### Option A: Using CLI (Recommended)
+#### Option A: Using uv (Recommended)
+
+```bash
+# Login first (one-time setup)
+uv tool run --from huggingface_hub hf login
+
+# Upload dataset files
+uv tool run --from huggingface_hub hf upload username/dataset-name data/hf-dataset-reviews.jsonl train.jsonl --repo-type dataset
+uv tool run --from huggingface_hub hf upload username/dataset-name data/hf-README.md README.md --repo-type dataset
+```
+
+#### Option B: Using huggingface-cli (pip)
 
 ```bash
 # Login
 huggingface-cli login
 
 # Create repository (public)
-huggingface-cli repo create tebuchet/org-reviews --type dataset
+huggingface-cli repo create username/dataset-name --type dataset
 
 # Or create private repository
-huggingface-cli repo create tebuchet/2gis-private --type dataset --private
+huggingface-cli repo create username/dataset-name --type dataset --private
 
 # Upload dataset
-huggingface-cli upload tebuchet/org-reviews data/hf-dataset-full.jsonl train.jsonl
-huggingface-cli upload tebuchet/org-reviews data/hf-README.md README.md
+huggingface-cli upload username/dataset-name data/hf-dataset-reviews.jsonl train.jsonl --repo-type dataset
+huggingface-cli upload username/dataset-name data/hf-README.md README.md --repo-type dataset
 ```
 
-#### Option B: Using Python
+#### Option C: Using Python
 
 ```python
 from huggingface_hub import HfApi
@@ -72,28 +99,28 @@ api = HfApi()
 
 # Create repository
 api.create_repo(
-    repo_id="tebuchet/org-reviews",
+    repo_id="username/dataset-name",
     repo_type="dataset",
     private=False  # Set to True for private repo
 )
 
 # Upload files
 api.upload_file(
-    path_or_fileobj="data/hf-dataset-full.jsonl",
+    path_or_fileobj="data/hf-dataset-reviews.jsonl",
     path_in_repo="train.jsonl",
-    repo_id="tebuchet/org-reviews",
+    repo_id="username/dataset-name",
     repo_type="dataset"
 )
 
 api.upload_file(
     path_or_fileobj="data/hf-README.md",
     path_in_repo="README.md",
-    repo_id="tebuchet/org-reviews",
+    repo_id="username/dataset-name",
     repo_type="dataset"
 )
 ```
 
-#### Option C: Using Web Interface
+#### Option D: Using Web Interface
 
 1. Go to [huggingface.co/new-dataset](https://huggingface.co/new-dataset)
 2. Create a new dataset repository
@@ -147,13 +174,13 @@ Avoid:
 
 ```python
 from datasets import load_dataset
-the published dataset
-dataset = load_dataset("tebuchet/org-review
-dataset = load_dataset("your-username/2gis-moscow-restaurants")
 
-# Access data
-for org in dataset['train']:
-    print(f"{org['name']}: {org['rating']} stars")
+# Load the published dataset
+dataset = load_dataset("tebuchet/org-reviews")
+
+# Access reviews data
+for review in dataset['train']:
+    print(f"[{review['rating']}⭐] {review['text'][:50]}...")
 ```
 
 ### Pandas
@@ -162,13 +189,13 @@ for org in dataset['train']:
 import pandas as pd
 from datasets import load_dataset
 
-# Load as DataFrametebuchet/org-review
-dataset = load_dataset("your-username/2gis-moscow-restaurants")
+# Load as DataFrame
+dataset = load_dataset("tebuchet/org-reviews")
 df = pd.DataFrame(dataset['train'])
 
-# Analyze
+# Analyze reviews
 print(df['rating'].describe())
-print(df['rubrics'].value_counts())
+print(df.groupby('rating').size())
 ```
 
 ## Best Practices
@@ -184,17 +211,25 @@ print(df['rubrics'].value_counts())
 To create a new version:
 
 ```bash
-# Upload to a specific revision
-huggingface-cli upload your-username/2gis-moscow-restaurants \
-  data/hf-dataset-full.jsonl train.jsonl \
-  --revision v2.0
+# Upload to a specific revision (uv)
+uv tool run --from huggingface_hub hf upload username/dataset-name \
+  data/hf-dataset-reviews.jsonl train.jsonl \
+  --repo-type dataset --revision v2.0
+
+# Or with huggingface-cli
+huggingface-cli upload username/dataset-name \
+  data/hf-dataset-reviews.jsonl train.jsonl \
+  --repo-type dataset --revision v2.0
 ```
 
 ## Troubleshooting
 
 ### Authentication Error
 ```bash
-# Re-login
+# Re-login with uv
+uv tool run --from huggingface_hub hf login
+
+# Or with huggingface-cli
 huggingface-cli login --token YOUR_TOKEN
 ```
 

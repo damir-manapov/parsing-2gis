@@ -1,11 +1,16 @@
 /**
  * Publisher for Hugging Face datasets
- * Converts scraped data to HF-compatible formats and generates dataset cards
+ * Generates dataset cards and upload instructions
  */
 
-import type { PublisherRepository, PublishMode } from './publisher-repository.js';
+import type {
+  PrepareResult,
+  PublisherRepository,
+  PublishMode,
+  PublishStats,
+} from './publisher-repository.js';
 
-export type { PublishMode };
+export type { PublishMode, PublishStats, PrepareResult };
 export type OutputFormat = 'jsonl' | 'parquet';
 
 export interface HFConfig {
@@ -13,46 +18,6 @@ export interface HFConfig {
   mode: PublishMode;
   privateRepo: boolean;
   outputFormat: OutputFormat;
-}
-
-export interface PublishStats {
-  totalRecords: number;
-  totalFiles: number;
-}
-
-export interface PublishResult {
-  jsonlPath: string;
-  readmePath: string;
-  stats: PublishStats;
-}
-
-/**
- * Convert data files to JSONL format
- */
-export async function convertToJSONL(
-  files: string[],
-  repository: PublisherRepository,
-): Promise<string> {
-  const lines: string[] = [];
-
-  for (const file of files) {
-    try {
-      const parsed = await repository.readJsonFile(file);
-      const data = (parsed as { data?: unknown }).data || parsed;
-
-      if (Array.isArray(data)) {
-        for (const item of data) {
-          lines.push(JSON.stringify(item));
-        }
-      } else {
-        lines.push(JSON.stringify(data));
-      }
-    } catch {
-      // Skip files that can't be parsed
-    }
-  }
-
-  return lines.join('\n');
 }
 
 /**
@@ -189,39 +154,14 @@ This dataset contains publicly available information from 2GIS. Users should res
 export async function prepareDataset(
   config: HFConfig,
   repository: PublisherRepository,
-): Promise<PublishResult> {
-  const files = await repository.collectDataFiles(config.mode);
-
-  if (files.length === 0) {
-    throw new Error(`No data files found for mode: ${config.mode}`);
-  }
-
-  const jsonlContent = await convertToJSONL(files, repository);
-  const lines = jsonlContent.split('\n').filter((l) => l.trim());
-
-  const stats: PublishStats = {
-    totalRecords: lines.length,
-    totalFiles: files.length,
-  };
-
-  const jsonlFilename = `hf-dataset-${config.mode}.jsonl`;
-  const readmeFilename = 'hf-README.md';
-
-  const jsonlPath = await repository.saveDatasetFile(jsonlFilename, jsonlContent);
-  const datasetCard = generateDatasetCard(config, stats);
-  const readmePath = await repository.saveDatasetFile(readmeFilename, datasetCard);
-
-  return {
-    jsonlPath,
-    readmePath,
-    stats,
-  };
+): Promise<PrepareResult> {
+  return repository.prepareDataset(config.mode, (stats) => generateDatasetCard(config, stats));
 }
 
 /**
  * Get upload instructions for Hugging Face CLI
  */
-export function getUploadInstructions(config: HFConfig, result: PublishResult): string {
+export function getUploadInstructions(config: HFConfig, result: PrepareResult): string {
   return `
 📤 Next steps to upload to Hugging Face:
 

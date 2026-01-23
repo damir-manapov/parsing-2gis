@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { convertToJSONL, generateDatasetCard, getUploadInstructions } from '../src/publisher.js';
+import { generateDatasetCard, getUploadInstructions } from '../src/publisher.js';
 import { PublisherRepository } from '../src/publisher-repository.js';
 
 const testListDir = 'data/parsed/list';
@@ -60,9 +60,9 @@ describe('publisher', () => {
     });
   });
 
-  describe('convertToJSONL', () => {
+  describe('repository.convertToJSONL', () => {
     it('should convert list files to JSONL', async () => {
-      const jsonl = await convertToJSONL([testListFile], repository);
+      const jsonl = await repository.convertToJSONL([testListFile]);
       const lines = jsonl.split('\n');
 
       expect(lines).toHaveLength(2);
@@ -70,7 +70,7 @@ describe('publisher', () => {
     });
 
     it('should convert org files to JSONL', async () => {
-      const jsonl = await convertToJSONL([testOrgFile], repository);
+      const jsonl = await repository.convertToJSONL([testOrgFile]);
       const lines = jsonl.split('\n');
 
       expect(lines).toHaveLength(1);

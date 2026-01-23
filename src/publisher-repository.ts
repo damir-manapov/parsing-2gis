@@ -6,6 +6,17 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 
 export type PublishMode = 'list' | 'full' | 'full-with-reviews';
 
+export interface PublishStats {
+  totalRecords: number;
+  totalFiles: number;
+}
+
+export interface PrepareResult {
+  jsonlPath: string;
+  readmePath: string;
+  stats: PublishStats;
+}
+
 export class PublisherRepository {
   /**
    * Collect data files for a given publish mode
@@ -36,7 +47,7 @@ export class PublisherRepository {
   }
 
   /**
-   * Save dataset file (for HF publishing)
+   * Save dataset file
    */
   async saveDatasetFile(filename: string, content: string): Promise<string> {
     await mkdir('data', { recursive: true });
@@ -69,5 +80,32 @@ export class PublisherRepository {
     }
 
     return lines.join('\n');
+  }
+
+  /**
+   * Prepare dataset files for upload
+   */
+  async prepareDataset(
+    mode: PublishMode,
+    generateReadme: (stats: PublishStats) => string,
+  ): Promise<PrepareResult> {
+    const files = await this.collectDataFiles(mode);
+
+    if (files.length === 0) {
+      throw new Error(`No data files found for mode: ${mode}`);
+    }
+
+    const jsonlContent = await this.convertToJSONL(files);
+    const lines = jsonlContent.split('\n').filter((l) => l.trim());
+
+    const stats: PublishStats = {
+      totalRecords: lines.length,
+      totalFiles: files.length,
+    };
+
+    const jsonlPath = await this.saveDatasetFile(`hf-dataset-${mode}.jsonl`, jsonlContent);
+    const readmePath = await this.saveDatasetFile('hf-README.md', generateReadme(stats));
+
+    return { jsonlPath, readmePath, stats };
   }
 }

@@ -167,13 +167,29 @@ pnpm dev
 
 The scraper is organized into focused modules:
 
+**Scraper Core:**
 - **`src/scraper/browser.ts`** - Browser session management and request blocking
 - **`src/scraper/helpers.ts`** - Retry logic, data extraction utilities
 - **`src/scraper/single-org.ts`** - Single organization scraping (with/without reviews)
 - **`src/scraper/index.ts`** - Main orchestration (list search, fromList batch, org-by-id)
-- **`src/repository.ts`** - Data persistence layer (read/write list files, organizations, reviews)
+
+**Data Layer:**
+- **`src/repository.ts`** - Scraping data persistence (list files, organizations, reviews)
+- **`src/publisher-repository.ts`** - Publishing data operations (collect files, convert to JSONL)
+
+**Export & Publishing:**
+- **`src/exporter.ts`** - Export reviews to dataset formats (JSONL, CSV)
+- **`src/publisher.ts`** - Generate HF dataset cards and upload instructions
+
+**Utilities:**
 - **`src/utils.ts`** - Generic utilities (Logger, parseArgs, slugify, etc.)
-- **`scripts/scrape.ts`** - CLI interface
+- **`src/config.ts`** - API configuration
+- **`src/errors.ts`** - Custom error classes
+
+**CLI Scripts:**
+- **`scripts/scrape.ts`** - Main scraping CLI
+- **`scripts/export-reviews-dataset.ts`** - Export reviews to datasets
+- **`scripts/publish-to-hf.ts`** - Prepare HF dataset uploads
 
 ## Quality Checks
 
@@ -208,7 +224,7 @@ Direct 2GIS API usage has significant limitations:
 2. **Complex Authentication**: Multiple parameters (viewpoints, r values, context_rubrics) required
 3. **Version Routing Issues**: Malformed requests fall back to API v2 which blocks keys
 4. **Hash Suffixes**: ByID endpoint requires special ID format with hash suffixes
-Is there somethink we should refactor or reorganise?
+
 ### Playwright Solution
 
 Browser automation handles all complexity automatically:
@@ -263,12 +279,8 @@ bun scripts/scrape.ts --query "ресторан" --mode full-with-reviews --max-
 bun scripts/scrape.ts --query "ресторан" --mode full-with-reviews --max-records 3 --max-reviews 150
 ```
 
-### Data Output
+### Performance
 
-Scraped data is saved in organized folders by mode:
-
-**List Mode:**
-- `data/raw/list/` - Raw search results
 **List Mode:**
 - **~0.3s per organization** (basic data from search results)
 - No individual page navigation required
@@ -303,25 +315,7 @@ Scraped data is saved in organized folders by mode:
 - Hybrid approach: Fast initialState + DOM pagination for unlimited reviews
 - Individual file per org for parallel processing
 
-**Examples:**
-- List scraping: 100 organizations in ~30 seconds
-- Full scraping: 10 organizations in (with up to 50 reviews)
-  - Organization data: ~1.4s
-  - Review extraction: ~1.3s (fast initialState extraction)
-
-- **~3-5s per organization** (with 100-200 reviews)
-  - Organization data: ~1.4s
-  - Review extraction: ~1.3s (first 50) + ~1s per pagination click
-
-**Optimizations:**
-- No unnecessary sleep delays
-- Direct URL navigation (no back button)
-- Request blocking (images, fonts, analytics)
-- Instant data from `window.initialState`
-- 93% reduction in raw data file size
-- Hybrid approach: Fast initialState + DOM pagination for unlimited reviews
-
-**Example:**
+**Example Timings:**
 - Scraping 10 organizations: ~14 seconds
 - With 50 reviews each: ~26 seconds (~2.6s per org)
 - With 100 reviews each: ~37 seconds (~3.7s per org)

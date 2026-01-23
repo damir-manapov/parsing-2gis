@@ -41,21 +41,43 @@ export class ScraperRepository {
     const slug = slugify(query);
     const metadata = this.createMetadata(query, responseTimeMs, organizations.length);
 
-    await saveRawData(
-      `${prefix}-organizations-raw-${slug}-${timestamp}.json`,
-      metadata,
-      rawData,
-      prefix,
-    );
-    this.logger.success(`Organizations raw data saved (${rawData.length} items)`);
+    // Save each organization individually
+    for (let i = 0; i < organizations.length; i++) {
+      const org = organizations[i];
+      const raw = rawData[i];
+      if (!org || !raw) continue;
 
-    await saveParsedData(
-      `${prefix}-organizations-${slug}-${timestamp}.json`,
-      metadata,
-      organizations,
-      prefix,
-    );
-    this.logger.success(`Organizations parsed data saved (${organizations.length} items)`);
+      const orgId = org.orgId || `unknown-${i}`;
+
+      // Save raw data
+      await saveRawData(
+        `${orgId}-${timestamp}.json`,
+        this.createMetadata(query, responseTimeMs, 1),
+        raw,
+        `${prefix}/organizations`,
+      );
+
+      // Save parsed data
+      await saveParsedData(
+        `${orgId}-${timestamp}.json`,
+        this.createMetadata(query, responseTimeMs, 1),
+        org,
+        `${prefix}/organizations`,
+      );
+    }
+
+    // Create manifest with list of all orgs
+    const manifest = {
+      query,
+      scrapedAt: new Date().toISOString(),
+      totalOrganizations: organizations.length,
+      organizationIds: organizations.map((org) => org.orgId || 'unknown'),
+      timestamp,
+    };
+
+    await saveParsedData(`${slug}-${timestamp}.json`, metadata, manifest, `${prefix}/manifests`);
+
+    this.logger.success(`Organizations saved: ${organizations.length} individual files + manifest`);
   }
 
   async saveReviews(

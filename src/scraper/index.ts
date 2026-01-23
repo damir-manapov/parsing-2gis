@@ -196,6 +196,40 @@ export async function scrapeSearchResults(
   const rawData: any[] = [];
 
   try {
+    // If orgId is provided, scrape single organization directly
+    if (options.orgId) {
+      logger.info(`Scraping organization by ID: ${options.orgId}`);
+      const orgUrl = `https://2gis.ru/moscow/firm/${options.orgId}`;
+
+      const result = await withRetry(
+        async () => scrapeSingleOrganization(page, orgUrl, logger, options),
+        options.maxRetries,
+        logger,
+        'Scraping organization',
+      );
+
+      if (result) {
+        organizations.push(result.organization);
+        rawData.push(result.rawData);
+        logger.success(
+          `${result.organization.name} | Phone: ${result.organization.phone ?? '-'} | Rating: ${result.organization.rating ?? '-'}`,
+        );
+      } else {
+        logger.error(`Failed to scrape organization ${options.orgId}`);
+      }
+
+      await browser.close();
+      logger.debug('Browser closed');
+      return { organizations, rawData };
+    }
+
+    // Otherwise, proceed with search query
+    if (!options.query) {
+      logger.error('Either query or orgId must be provided');
+      await browser.close();
+      return { organizations, rawData };
+    }
+
     logger.info(`Navigating to 2GIS search for "${options.query}"...`);
 
     // Navigate to search page with retry

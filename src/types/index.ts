@@ -75,7 +75,8 @@ export interface ScrapedOrganization {
 export type ScrapingMode = 'list' | 'full' | 'full-with-reviews';
 
 export interface ScraperOptions {
-  query: string;
+  query?: string;
+  orgId?: string;
   delayMs: number;
   maxRecords: number;
   maxRetries: number;

@@ -80,6 +80,44 @@ export class ScraperRepository {
     this.logger.success(`Reviews data saved (${allReviews.length} reviews)`);
   }
 
+  async saveOrganizationById(
+    orgId: string,
+    responseTimeMs: number,
+    organization: ScrapedOrganization,
+    // biome-ignore lint/suspicious/noExplicitAny: Raw 2GIS data structure is dynamic
+    rawData: any,
+    includeReviews = false,
+  ): Promise<void> {
+    const timestamp = createFileTimestamp();
+    const prefix = includeReviews ? 'full-with-reviews' : 'full';
+    const metadata = this.createMetadata(orgId, responseTimeMs, 1);
+
+    await saveRawData(`${prefix}-organization-${orgId}-raw-${timestamp}.json`, metadata, rawData);
+    this.logger.success(`Organization raw data saved (ID: ${orgId})`);
+
+    await saveParsedData(
+      `${prefix}-organization-${orgId}-${timestamp}.json`,
+      metadata,
+      organization,
+    );
+    this.logger.success(`Organization parsed data saved (ID: ${orgId})`);
+
+    if (includeReviews && organization.reviews && organization.reviews.length > 0) {
+      const reviewsWithOrg = organization.reviews.map((review) => ({
+        ...review,
+        organizationId: organization.orgId,
+        organizationName: organization.name,
+      }));
+
+      await saveParsedData(
+        `full-with-reviews-organization-${orgId}-reviews-${timestamp}.json`,
+        metadata,
+        reviewsWithOrg,
+      );
+      this.logger.success(`Organization reviews saved (${reviewsWithOrg.length} reviews)`);
+    }
+  }
+
   private createMetadata(query: string, responseTimeMs: number, totalResults: number): Metadata {
     return createMetadata({
       apiVersion: 'playwright-scrape',

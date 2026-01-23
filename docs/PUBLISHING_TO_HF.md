@@ -16,11 +16,11 @@ bun scripts/scrape.ts --from-list data/parsed/list/list-*.json --mode full-with-
 bun scripts/export-reviews-dataset.ts
 
 # 3. Prepare dataset
-bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name"
+bun scripts/publish-to-hf.ts --dataset-name "tebuchet/org-reviews"
 
 # 4. Upload
-uv tool run --from huggingface_hub hf upload username/dataset-name data/hf-dataset-reviews.jsonl train.jsonl --repo-type dataset
-uv tool run --from huggingface_hub hf upload username/dataset-name data/hf-README.md README.md --repo-type dataset
+uv tool run --from huggingface_hub hf upload tebuchet/org-reviews data/hf-dataset-reviews.jsonl train.jsonl --repo-type dataset
+uv tool run --from huggingface_hub hf upload tebuchet/org-reviews data/hf-README.md README.md --repo-type dataset
 ```
 
 ## Data Format

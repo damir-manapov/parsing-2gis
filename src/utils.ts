@@ -1,5 +1,3 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-
 // Logger utility with timestamps
 export class Logger {
   private startTime: number;
@@ -50,36 +48,6 @@ export interface Metadata {
   searchResponseTimeMs?: number;
   byIdResponseTimeMs?: number;
   totalResponseTimeMs?: number;
-}
-
-export function createFileTimestamp(): string {
-  return new Date().toISOString().replace(/[:.]/g, '-');
-}
-
-export async function saveRawData(
-  filename: string,
-  metadata: Metadata,
-  data: unknown,
-  subfolder = '',
-): Promise<string> {
-  const dirPath = subfolder ? `data/raw/${subfolder}` : 'data/raw';
-  await mkdir(dirPath, { recursive: true });
-  const filePath = `${dirPath}/${filename}`;
-  await writeFile(filePath, JSON.stringify({ meta: metadata, data }, null, 2));
-  return filePath;
-}
-
-export async function saveParsedData(
-  filename: string,
-  metadata: Metadata,
-  data: unknown,
-  subfolder = '',
-): Promise<string> {
-  const dirPath = subfolder ? `data/parsed/${subfolder}` : 'data/parsed';
-  await mkdir(dirPath, { recursive: true });
-  const filePath = `${dirPath}/${filename}`;
-  await writeFile(filePath, JSON.stringify({ meta: metadata, data }, null, 2));
-  return filePath;
 }
 
 export function parseArgs<T extends string>(

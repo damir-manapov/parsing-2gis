@@ -77,6 +77,7 @@ export type ScrapingMode = 'list' | 'full' | 'full-with-reviews';
 export interface ScraperOptions {
   query?: string;
   orgId?: string;
+  fromList?: string; // Path to list file for stage 2
   delayMs: number;
   maxRecords: number;
   maxRetries: number;

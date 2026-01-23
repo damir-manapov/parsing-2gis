@@ -1,11 +1,20 @@
 # parsing-2gis
 
-A TypeScript tool for scraping 2GIS organization data using Playwright browser automation.
+A TypeScript tool for scraping 2GIS organization data using Playwright browser automation with a modular architecture.
+
+## Features
+
+- **Modular Architecture**: Clean separation of concerns (browser, helpers, single-org scraping, repository)
+- **Two-Stage Workflow**: Fast list collection → detailed scraping from saved lists
+- **Three Scraping Modes**: List (basic), Full (detailed), Full-with-Reviews (detailed + reviews)
+- **Organization by ID**: Direct scraping of specific organizations
+- **Smart Data Storage**: Organized by mode with individual org files and manifests
+- **Performance Optimized**: Request blocking, instant data extraction, retry logic
 
 ## Requirements
 
 - Node.js 22+
-- bun (or pnpm)
+- Bun (or pnpm)
 - Playwright (installed automatically)
 - gitleaks (for security checks)
 
@@ -19,41 +28,78 @@ npx playwright install chromium
 
 ## Usage
 
-The scraper uses Playwright to extract organization data from 2GIS search results:
+### Two-Stage Workflow (Recommended)
+
+**Stage 1: Collect organization IDs from search**
+```bash
+bun scripts/scrape.ts --query "кальян" --mode list --max-records 100
+```
+This creates a list file in `data/parsed/list/` with organization IDs.
+
+**Stage 2: Scrape full details from saved list**
+```bash
+bun scripts/scrape.ts --from-list data/parsed/list/list-кальян-2026-01-23T14-25-11-633Z.json --mode full --max-records 10
+```
+
+### Single-Stage Workflow
+
+**List mode (basic data only)**
+```bash
+bun scripts/scrape.ts --query "ресторан" --mode list --max-records 50
+```
+
+**Full mode (detailed data)**
+```bash
+bun scripts/scrape.ts --query "кафе" --mode full --max-records 10
+```
+
+**Full-with-reviews mode (detailed data + reviews)**
+```bash
+bun scripts/scrape.ts --query "бар" --mode full-with-reviews --max-records 5 --max-reviews 100
+```
+
+### Organization by ID
 
 ```bash
-bun scripts/scrape-search.ts --query "кальян" --max-records 50 --delay 2000
+bun scripts/scrape.ts --org-id 70000001044609041 --mode full
+bun scripts/scrape.ts --org-id 70000001044609041 --mode full-with-reviews --max-reviews 150
 ```
 
 ### Scraper Options
 
-- `--query` - Search query (default: "кальян")
+- `--query` - Search query (required for list mode)
+- `--org-id` - Scrape specific organization by ID
+- `--from-list` - Path to list file from Stage 1
+- `--mode` - Scraping mode: `list`, `full`, `full-with-reviews` (default: `full`)
 - `--max-records` - Maximum results to scrape (default: 50)
+- `--max-reviews` - Maximum reviews per organization (default: 100)
 - `--delay` - Delay between requests in ms (default: 2000)
 - `--max-retries` - Retry attempts for failed operations (default: 3)
-- `--headless` - Run browser in headless mode (default: true)
-- `--include-reviews` - Extract reviews for each organization (default: false)
-- `--max-reviews` - Maximum reviews per organization (default: 100, **unlimited with DOM pagination**)
-
-### Examples
-
-```bash
-# Basic scraping
-bun scripts/scrape-search.ts --query "ресторан" --max-records 10
-
-# Include reviews (up to 50 from initialState)
-bun scripts/scrape-search.ts --query "кафе" --max-records 5 --include-reviews true --max-reviews 50
-
-# Extract more reviews with pagination (slower)
-bun scripts/scrape-search.ts --query "ресторан" --max-records 3 --include-reviews true --max-reviews 200
-
-# Visible browser (non-headless)
-bun scripts/scrape-search.ts --query "кальян" --headless false
-```
+- `--headless` - Run browser in headless mode (default: `true`)
 
 ## Data Storage
 
-API results are stored in the `data/` folder (gitignored).
+Data is organized by scraping mode in the `data/` folder (gitignored):
+
+```
+data/
+├── raw/
+│   ├── list/              # Raw search results
+│   ├── full/
+│   │   └── organizations/ # Raw organization data
+│   └── full-with-reviews/
+│       └── organizations/ # Raw org data with reviews
+└── parsed/
+    ├── list/              # Parsed list files (for Stage 2)
+    ├── full/
+    │   ├── organizations/ # Individual org files: {orgId}-{timestamp}.json
+    │   └── manifests/     # Batch metadata
+    ├── full-with-reviews/
+    │   ├── organizations/ # Individual org files with reviews
+    │   ├── reviews/       # Aggregated reviews
+    │   └── manifests/     # Batch metadata
+    └── organizations/     # Org-by-ID mode outputs
+```
 
 ## Development
 
@@ -61,22 +107,7 @@ API results are stored in the `data/` folder (gitignored).
 pnpm dev
 ```
 
-## Scripts
-
-### Scraper
-
-```bash
-# Scrape organizations with Playwright
-bun scripts/scrape-search.ts --query "кальян" --max-records 50
-
-# Include reviews (up to 50 per organization, fast)
-bun scripts/scrape-search.ts --query "ресторан" --max-records 10 --include-reviews true --max-reviews 50
-
-# Extract unlimited reviews with pagination (slower)
-bun scripts/scrape-search.ts --query "кафе" --max-records 3 --include-reviews true --max-reviews 200
-```
-
-### Development Scripts
+## Development Scripts
 
 - `pnpm dev` - Run in watch mode
 - `pnpm start` - Run the application
@@ -86,6 +117,18 @@ bun scripts/scrape-search.ts --query "кафе" --max-records 3 --include-review
 - `pnpm format` - Format code
 - `pnpm test` - Run tests
 - `pnpm test:watch` - Run tests in watch mode
+
+## Architecture
+
+The scraper is organized into focused modules:
+
+- **`src/scraper/browser.ts`** - Browser session management and request blocking
+- **`src/scraper/helpers.ts`** - Retry logic, data extraction utilities
+- **`src/scraper/single-org.ts`** - Single organization scraping (with/without reviews)
+- **`src/scraper/index.ts`** - Main orchestration (list search, fromList batch, org-by-id)
+- **`src/repository.ts`** - Data persistence layer (read/write list files, organizations, reviews)
+- **`src/utils.ts`** - Generic utilities (Logger, parseArgs, slugify, etc.)
+- **`scripts/scrape.ts`** - CLI interface
 
 ## Quality Checks
 
@@ -120,7 +163,7 @@ Direct 2GIS API usage has significant limitations:
 2. **Complex Authentication**: Multiple parameters (viewpoints, r values, context_rubrics) required
 3. **Version Routing Issues**: Malformed requests fall back to API v2 which blocks keys
 4. **Hash Suffixes**: ByID endpoint requires special ID format with hash suffixes
-
+Is there somethink we should refactor or reorganise?
 ### Playwright Solution
 
 Browser automation handles all complexity automatically:
@@ -147,7 +190,7 @@ Each organization includes:
 
 The scraper supports two methods for extracting reviews:
 
-**1. Fast extraction (default, up to 50 reviews)**
+**1. Fast extraction (up to 50 reviews)**
 - Extracts from `window.initialState` on `/tab/reviews` page
 - Speed: ~1.3s per organization
 - Includes: Review ID, text, rating, author, dates, likes/dislikes, source
@@ -166,27 +209,58 @@ The scraper supports two methods for extracting reviews:
 - 100 reviews: ~2.3s (50 fast + 1 click)
 - 150 reviews: ~3.3s (50 fast + 2 clicks)
 
-To extract more than 50 reviews:
+**Usage:**
 ```bash
-bun scripts/scrape-search.ts --query "ресторан" --max-records 3 --include-reviews true --max-reviews 150
+# Fast (up to 50 reviews)
+bun scripts/scrape.ts --query "ресторан" --mode full-with-reviews --max-records 3
+
+# Unlimited (with pagination)
+bun scripts/scrape.ts --query "ресторан" --mode full-with-reviews --max-records 3 --max-reviews 150
 ```
 
 ### Data Output
 
-Scraped data is saved in two formats:
-- **Raw data** (`data/raw/`): Organization data from initialState (optimized, 93% smaller)
-- **Parsed data** (`data/parsed/`): Structured JSON with 25+ extracted fields per organization
+Scraped data is saved in organized folders by mode:
 
-## Performance
+**List Mode:**
+- `data/raw/list/` - Raw search results
+**List Mode:**
+- **~0.3s per organization** (basic data from search results)
+- No individual page navigation required
+- Ideal for collecting organization IDs for Stage 2
 
-The scraper is highly optimized for speed:
-
+**Full Mode:**
 - **~1.4s per organization** (without reviews)
   - Navigation: 1.1-1.6s
   - Wait for initialState: 10-15ms
   - Data extraction: ~95ms
 
+**Full-with-Reviews Mode:**
 - **~2.6s per organization** (with up to 50 reviews)
+  - Organization data: ~1.4s
+  - Review extraction: ~1.3s (fast initialState extraction)
+
+- **~3-5s per organization** (with 100-200 reviews)
+  - Organization data: ~1.4s
+  - Review extraction: ~1.3s (first 50) + ~1s per pagination click
+
+**Two-Stage Workflow Performance:**
+- Stage 1 (list): 100 orgs in ~30 seconds
+- Stage 2 (full): 10 orgs in ~14 seconds
+- **Benefit**: Collect many IDs fast, then selectively scrape details
+
+**Optimizations:**
+- No unnecessary sleep delays
+- Direct URL navigation (no back button)
+- Request blocking (images, fonts, analytics)
+- Instant data from `window.initialState`
+- 93% reduction in raw data file size
+- Hybrid approach: Fast initialState + DOM pagination for unlimited reviews
+- Individual file per org for parallel processing
+
+**Examples:**
+- List scraping: 100 organizations in ~30 seconds
+- Full scraping: 10 organizations in (with up to 50 reviews)
   - Organization data: ~1.4s
   - Review extraction: ~1.3s (fast initialState extraction)
 
@@ -202,7 +276,7 @@ The scraper is highly optimized for speed:
 - 93% reduction in raw data file size
 - Hybrid approach: Fast initialState + DOM pagination for unlimited reviews
 
-**Example:** 
+**Example:**
 - Scraping 10 organizations: ~14 seconds
 - With 50 reviews each: ~26 seconds (~2.6s per org)
 - With 100 reviews each: ~37 seconds (~3.7s per org)

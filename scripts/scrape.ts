@@ -1,7 +1,9 @@
-// Run with: bun scripts/scrape.ts [--query "кальян"] [--org-id 70000001044609041] [--delay 2000] [--max-records 50] [--mode full] [--headless true]
+// Two-stage scraping workflow:
+// Stage 1: bun scripts/scrape.ts --query "кальян" --mode list
+// Stage 2: bun scripts/scrape.ts --from-list data/parsed/list/list---2026-01-23T14-02-43-026Z.json --mode full
+//
+// Or single org: bun scripts/scrape.ts --org-id 70000001044609041 --mode full
 // Modes: list (basic data only), full (detailed data), full-with-reviews (detailed data + reviews)
-// Uses Playwright to scrape 2GIS search results and detail pages
-// Either --query or --org-id must be provided (org-id takes precedence)
 
 import { ScraperRepository } from '../src/repository.js';
 import { scrapeSearchResults } from '../src/scraper/index.js';
@@ -27,9 +29,9 @@ function displayOrganization(org: ScrapedOrganization): void {
 }
 
 function validateOptions(options: ScraperOptions): void {
-  // Validate that either query or orgId is provided
-  if (!options.query && !options.orgId) {
-    console.error('Either --query or --org-id must be provided');
+  // Validate that either query, orgId, or fromList is provided
+  if (!options.query && !options.orgId && !options.fromList) {
+    console.error('Either --query, --org-id, or --from-list must be provided');
     process.exit(1);
   }
 
@@ -41,11 +43,28 @@ function validateOptions(options: ScraperOptions): void {
     process.exit(1);
   }
 
-  // List mode requires query (not orgId)
-  if (options.scrapingMode === 'list' && options.orgId) {
-    console.error('List mode requires --query, not --org-id');
+  // List mode requires query (not orgId or fromList)
+  if (options.scrapingMode === 'list' && (options.orgId || options.fromList)) {
+    console.error('List mode requires --query, not --org-id or --from-list');
     process.exit(1);
   }
+
+  // fromList requires full or full-with-reviews mode
+  if (options.fromList && options.scrapingMode === 'list') {
+    console.error('--from-list requires --mode full or full-with-reviews');
+    process.exit(1);
+  }
+}
+
+async function getQueryForSaving(
+  repository: ScraperRepository,
+  options: ScraperOptions,
+): Promise<string> {
+  if (options.fromList) {
+    const listData = await repository.readListFile(options.fromList);
+    return listData.query || 'from-list';
+  }
+  return options.query || 'unknown';
 }
 
 async function saveResults(
@@ -69,26 +88,21 @@ async function saveResults(
         options.scrapingMode === 'full-with-reviews',
       );
     }
-  } else if (options.query) {
+  } else {
+    const query = await getQueryForSaving(repository, options);
     if (options.scrapingMode === 'list') {
-      await repository.saveListData(options.query, responseTime, organizations, rawData);
+      await repository.saveListData(query, responseTime, organizations, rawData);
     } else if (options.scrapingMode === 'full') {
-      await repository.saveOrganizations(
-        options.query,
-        responseTime,
-        organizations,
-        rawData,
-        'full',
-      );
+      await repository.saveOrganizations(query, responseTime, organizations, rawData, 'full');
     } else if (options.scrapingMode === 'full-with-reviews') {
       await repository.saveOrganizations(
-        options.query,
+        query,
         responseTime,
         organizations,
         rawData,
         'full-with-reviews',
       );
-      await repository.saveReviews(options.query, responseTime, organizations);
+      await repository.saveReviews(query, responseTime, organizations);
     }
   }
 }
@@ -97,6 +111,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2), {
     query: 'кальян',
     'org-id': '',
+    'from-list': '',
     delay: '2000',
     'max-records': '50',
     'max-retries': '3',
@@ -106,7 +121,11 @@ async function main() {
   });
 
   const options: ScraperOptions = {
-    ...(args['org-id'] ? { orgId: args['org-id'] } : { query: args.query }),
+    ...(args['from-list']
+      ? { fromList: args['from-list'] }
+      : args['org-id']
+        ? { orgId: args['org-id'] }
+        : { query: args.query }),
     delayMs: Number(args.delay),
     maxRecords: Number(args['max-records']),
     maxRetries: Number(args['max-retries']),
@@ -118,7 +137,9 @@ async function main() {
   validateOptions(options);
 
   const logger = new Logger();
-  if (options.orgId) {
+  if (options.fromList) {
+    logger.info(`Scraping from list file: ${options.fromList}`);
+  } else if (options.orgId) {
     logger.info(`Scraping 2GIS organization ID: ${options.orgId}`);
   } else {
     logger.info(`Scraping 2GIS for "${options.query}" in Moscow`);

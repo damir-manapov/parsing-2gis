@@ -1,3 +1,4 @@
+import { ScraperRepository } from '../repository.js';
 import type { ScrapedOrganization, ScraperOptions } from '../types/index.js';
 import { Logger } from '../utils.js';
 import { closeBrowser, createBrowserSession } from './browser.js';
@@ -22,6 +23,50 @@ export async function scrapeSearchResults(
   const rawData: any[] = [];
 
   try {
+    // If fromList is provided, read list file and scrape each org
+    if (options.fromList) {
+      logger.info(`Reading list file: ${options.fromList}`);
+      const repository = new ScraperRepository(logger);
+      const listData = await repository.readListFile(options.fromList);
+      const orgIds = listData.orgIds.slice(0, options.maxRecords);
+
+      logger.info(`Found ${listData.orgIds.length} orgs in list, will scrape ${orgIds.length}`);
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (let i = 0; i < orgIds.length; i++) {
+        const orgId = orgIds[i];
+        if (!orgId) continue;
+
+        logger.progress(i + 1, orgIds.length, `Processing org: ${orgId}`);
+
+        const orgUrl = `https://2gis.ru/moscow/firm/${orgId}`;
+        const result = await withRetry(
+          async () => scrapeSingleOrganization(page, orgUrl, logger, options),
+          options.maxRetries,
+          logger,
+          `Scraping organization ${orgId}`,
+        );
+
+        if (result) {
+          organizations.push(result.organization);
+          rawData.push(result.rawData);
+          logger.success(
+            `${result.organization.name} | Phone: ${result.organization.phone ?? '-'} | Rating: ${result.organization.rating ?? '-'}`,
+          );
+          successCount++;
+        } else {
+          logger.error(`Failed to scrape organization ${orgId}`);
+          failureCount++;
+        }
+      }
+
+      logger.info(`Scraping from list complete: ${successCount} succeeded, ${failureCount} failed`);
+      await closeBrowser(browser, logger);
+      return { organizations, rawData };
+    }
+
     // If orgId is provided, scrape single organization directly
     if (options.orgId) {
       logger.info(`Scraping organization by ID: ${options.orgId}`);

@@ -1,15 +1,69 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { ScrapedOrganization } from './types/index.js';
 import type { Logger, Metadata } from './utils.js';
-import {
-  createFileTimestamp,
-  createMetadata,
-  saveParsedData,
-  saveRawData,
-  slugify,
-} from './utils.js';
+import { createMetadata, slugify } from './utils.js';
+
+export interface ListData {
+  orgIds: string[];
+  query?: string;
+  totalResults: number;
+}
 
 export class ScraperRepository {
   constructor(private logger: Logger) {}
+
+  private createFileTimestamp(): string {
+    return new Date().toISOString().replace(/[:.]/g, '-');
+  }
+
+  private async saveRawData(
+    filename: string,
+    metadata: Metadata,
+    data: unknown,
+    subfolder = '',
+  ): Promise<string> {
+    const dirPath = subfolder ? `data/raw/${subfolder}` : 'data/raw';
+    await mkdir(dirPath, { recursive: true });
+    const filePath = `${dirPath}/${filename}`;
+    await writeFile(filePath, JSON.stringify({ meta: metadata, data }, null, 2));
+    return filePath;
+  }
+
+  private async saveParsedData(
+    filename: string,
+    metadata: Metadata,
+    data: unknown,
+    subfolder = '',
+  ): Promise<string> {
+    const dirPath = subfolder ? `data/parsed/${subfolder}` : 'data/parsed';
+    await mkdir(dirPath, { recursive: true });
+    const filePath = `${dirPath}/${filename}`;
+    await writeFile(filePath, JSON.stringify({ meta: metadata, data }, null, 2));
+    return filePath;
+  }
+
+  async readListFile(filePath: string): Promise<ListData> {
+    const content = await readFile(filePath, 'utf-8');
+    const parsed = JSON.parse(content);
+
+    // Handle both parsed list data and raw list data
+    const data = parsed.data || parsed;
+
+    if (Array.isArray(data)) {
+      // Array of organizations
+      const orgIds = data
+        .map((org) => org.orgId || org.firmId)
+        .filter((id): id is string => Boolean(id));
+
+      return {
+        orgIds,
+        totalResults: orgIds.length,
+        query: parsed.meta?.query,
+      };
+    }
+
+    throw new Error('Invalid list file format');
+  }
 
   async saveListData(
     query: string,
@@ -18,14 +72,14 @@ export class ScraperRepository {
     // biome-ignore lint/suspicious/noExplicitAny: Raw 2GIS data structure is dynamic
     rawData: any[],
   ): Promise<void> {
-    const timestamp = createFileTimestamp();
+    const timestamp = this.createFileTimestamp();
     const slug = slugify(query);
     const metadata = this.createMetadata(query, responseTimeMs, organizations.length);
 
-    await saveRawData(`list-raw-${slug}-${timestamp}.json`, metadata, rawData, 'list');
+    await this.saveRawData(`list-raw-${slug}-${timestamp}.json`, metadata, rawData, 'list');
     this.logger.success(`List raw data saved (${rawData.length} items)`);
 
-    await saveParsedData(`list-${slug}-${timestamp}.json`, metadata, organizations, 'list');
+    await this.saveParsedData(`list-${slug}-${timestamp}.json`, metadata, organizations, 'list');
     this.logger.success(`List parsed data saved (${organizations.length} items)`);
   }
 
@@ -37,7 +91,7 @@ export class ScraperRepository {
     rawData: any[],
     prefix: 'full' | 'full-with-reviews' = 'full',
   ): Promise<void> {
-    const timestamp = createFileTimestamp();
+    const timestamp = this.createFileTimestamp();
     const slug = slugify(query);
     const metadata = this.createMetadata(query, responseTimeMs, organizations.length);
 
@@ -50,7 +104,7 @@ export class ScraperRepository {
       const orgId = org.orgId || `unknown-${i}`;
 
       // Save raw data
-      await saveRawData(
+      await this.saveRawData(
         `${orgId}-${timestamp}.json`,
         this.createMetadata(query, responseTimeMs, 1),
         raw,
@@ -58,7 +112,7 @@ export class ScraperRepository {
       );
 
       // Save parsed data
-      await saveParsedData(
+      await this.saveParsedData(
         `${orgId}-${timestamp}.json`,
         this.createMetadata(query, responseTimeMs, 1),
         org,
@@ -75,7 +129,12 @@ export class ScraperRepository {
       timestamp,
     };
 
-    await saveParsedData(`${slug}-${timestamp}.json`, metadata, manifest, `${prefix}/manifests`);
+    await this.saveParsedData(
+      `${slug}-${timestamp}.json`,
+      metadata,
+      manifest,
+      `${prefix}/manifests`,
+    );
 
     this.logger.success(`Organizations saved: ${organizations.length} individual files + manifest`);
   }
@@ -96,11 +155,11 @@ export class ScraperRepository {
 
     if (allReviews.length === 0) return;
 
-    const timestamp = createFileTimestamp();
+    const timestamp = this.createFileTimestamp();
     const slug = slugify(query);
     const metadata = this.createMetadata(query, responseTimeMs, allReviews.length);
 
-    await saveParsedData(
+    await this.saveParsedData(
       `reviews-${slug}-${timestamp}.json`,
       metadata,
       allReviews,
@@ -117,11 +176,11 @@ export class ScraperRepository {
     rawData: any,
     includeReviews = false,
   ): Promise<void> {
-    const timestamp = createFileTimestamp();
+    const timestamp = this.createFileTimestamp();
     const prefix = includeReviews ? 'full-with-reviews' : 'full';
     const metadata = this.createMetadata(orgId, responseTimeMs, 1);
 
-    await saveRawData(
+    await this.saveRawData(
       `${prefix}-organization-${orgId}-raw-${timestamp}.json`,
       metadata,
       rawData,
@@ -129,7 +188,7 @@ export class ScraperRepository {
     );
     this.logger.success(`Organization raw data saved (ID: ${orgId})`);
 
-    await saveParsedData(
+    await this.saveParsedData(
       `${prefix}-organization-${orgId}-${timestamp}.json`,
       metadata,
       organization,
@@ -144,7 +203,7 @@ export class ScraperRepository {
         organizationName: organization.name,
       }));
 
-      await saveParsedData(
+      await this.saveParsedData(
         `organization-${orgId}-reviews-${timestamp}.json`,
         metadata,
         reviewsWithOrg,

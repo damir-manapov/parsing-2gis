@@ -17,11 +17,6 @@ export const TIMEOUTS = {
   reviewPagination: 10000,
 } as const;
 
-export const BROWSER_CONFIG = {
-  headless: true,
-  viewport: { width: 1920, height: 1080 },
-} as const;
-
 export const REQUEST_BLOCKING = {
   resourceTypes: ['image', 'font', 'media', 'stylesheet'] as const,
   domains: [
@@ -33,17 +28,6 @@ export const REQUEST_BLOCKING = {
     '/ads/',
     '/metrics/',
   ] as const,
-} as const;
-
-export const DATA_PATHS = {
-  raw: 'data/raw',
-  parsed: 'data/parsed',
-} as const;
-
-export const SCRAPING_MODES = {
-  LIST: 'list',
-  FULL: 'full',
-  FULL_WITH_REVIEWS: 'full-with-reviews',
 } as const;
 
 export const API_CONFIG = {

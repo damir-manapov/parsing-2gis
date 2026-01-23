@@ -54,6 +54,15 @@ function getFieldDescriptions(mode: PublishMode): string {
 `;
   }
 
+  if (mode === 'reviews') {
+    return `
+### Reviews Mode
+- \`text\`: Review text content
+- \`rating\`: Rating (1-5 stars)
+- \`organizationName\`: Name of the reviewed organization
+`;
+  }
+
   return `
 ### Full with Reviews Mode
 All fields from Full Mode, plus:

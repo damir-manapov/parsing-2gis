@@ -2,9 +2,10 @@
  * Repository for Hugging Face dataset publishing operations
  */
 
+import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 
-export type PublishMode = 'list' | 'full' | 'full-with-reviews';
+export type PublishMode = 'list' | 'full' | 'full-with-reviews' | 'reviews';
 
 export interface PublishStats {
   totalRecords: number;
@@ -22,6 +23,15 @@ export class PublisherRepository {
    * Collect data files for a given publish mode
    */
   async collectDataFiles(mode: PublishMode): Promise<string[]> {
+    // Special case: reviews mode uses pre-exported file
+    if (mode === 'reviews') {
+      const exportedPath = 'data/exports/reviews-dataset.jsonl';
+      if (existsSync(exportedPath)) {
+        return [exportedPath];
+      }
+      return [];
+    }
+
     const basePath = `data/parsed/${mode}`;
 
     try {
@@ -64,6 +74,14 @@ export class PublisherRepository {
 
     for (const file of files) {
       try {
+        // If it's already a JSONL file, read it directly
+        if (file.endsWith('.jsonl')) {
+          const content = await readFile(file, 'utf-8');
+          const jsonlLines = content.split('\n').filter((l) => l.trim());
+          lines.push(...jsonlLines);
+          continue;
+        }
+
         const parsed = await this.readJsonFile(file);
         const data = (parsed as { data?: unknown }).data || parsed;
 

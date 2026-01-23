@@ -256,12 +256,12 @@ export async function scrapeSearchResults(
     if (options.scrapingMode === 'list') {
       logger.info('List mode: extracting basic data from search results');
 
-      const basicData = await page.evaluate(() => {
+      const basicData = await page.evaluate((maxRecords) => {
         // biome-ignore lint/suspicious/noExplicitAny: Search result items have dynamic structure
         const results: any[] = [];
         const links = document.querySelectorAll('a[href*="/moscow/firm/"]');
 
-        for (const link of Array.from(links).slice(0, 50)) {
+        for (const link of Array.from(links).slice(0, maxRecords)) {
           const container =
             link.closest('[data-id]') || link.closest('article') || link.parentElement;
           const firmId = link.getAttribute('href')?.match(/firm\/(\d+)/)?.[1];
@@ -277,7 +277,7 @@ export async function scrapeSearchResults(
         }
 
         return results;
-      });
+      }, totalToScrape);
 
       for (let i = 0; i < Math.min(basicData.length, totalToScrape); i++) {
         const item = basicData[i];

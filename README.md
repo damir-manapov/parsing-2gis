@@ -64,6 +64,25 @@ bun scripts/scrape.ts --query "кафе" --mode full --max-records 10
 bun scripts/scrape.ts --query "бар" --mode full-with-reviews --max-records 5 --max-reviews 100
 ```
 
+### Exporting Reviews Dataset
+
+After scraping reviews, export them as a simple dataset for ML/analysis:
+
+```bash
+# Export as JSONL (default)
+bun scripts/export-reviews-dataset.ts --format jsonl
+
+# Export as CSV
+bun scripts/export-reviews-dataset.ts --format csv
+
+# Custom output directory
+bun scripts/export-reviews-dataset.ts --format jsonl --output data/exports
+```
+
+Outputs:
+- `data/reviews-dataset.jsonl` - One JSON object per line: `{"text":"...", "rating":5}`
+- `data/reviews-dataset.csv` - CSV format: `rating,text`
+
 ### Organization by ID
 
 ```bash

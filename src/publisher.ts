@@ -3,9 +3,9 @@
  * Converts scraped data to HF-compatible formats and generates dataset cards
  */
 
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import type { PublishMode, ScraperRepository } from './repository.js';
 
-export type PublishMode = 'list' | 'full' | 'full-with-reviews';
+export type { PublishMode };
 export type OutputFormat = 'jsonl' | 'parquet';
 
 export interface HFConfig {
@@ -27,36 +27,18 @@ export interface PublishResult {
 }
 
 /**
- * Collect data files for a given scraping mode
- */
-export async function collectDataFiles(mode: PublishMode): Promise<string[]> {
-  const basePath = `data/parsed/${mode}`;
-
-  try {
-    if (mode === 'list') {
-      const files = await readdir(basePath);
-      return files.filter((f) => f.endsWith('.json')).map((f) => `${basePath}/${f}`);
-    }
-    const files = await readdir(`${basePath}/organizations`);
-    return files
-      .filter((f) => f.endsWith('.json') && !f.includes('manifest'))
-      .map((f) => `${basePath}/organizations/${f}`);
-  } catch {
-    return [];
-  }
-}
-
-/**
  * Convert data files to JSONL format
  */
-export async function convertToJSONL(files: string[]): Promise<string> {
+export async function convertToJSONL(
+  files: string[],
+  repository: ScraperRepository,
+): Promise<string> {
   const lines: string[] = [];
 
   for (const file of files) {
     try {
-      const content = await readFile(file, 'utf-8');
-      const parsed = JSON.parse(content);
-      const data = parsed.data || parsed;
+      const parsed = await repository.readJsonFile(file);
+      const data = (parsed as { data?: unknown }).data || parsed;
 
       if (Array.isArray(data)) {
         for (const item of data) {
@@ -204,14 +186,17 @@ This dataset contains publicly available information from 2GIS. Users should res
 /**
  * Prepare dataset files for Hugging Face upload
  */
-export async function prepareDataset(config: HFConfig): Promise<PublishResult> {
-  const files = await collectDataFiles(config.mode);
+export async function prepareDataset(
+  config: HFConfig,
+  repository: ScraperRepository,
+): Promise<PublishResult> {
+  const files = await repository.collectDataFiles(config.mode);
 
   if (files.length === 0) {
     throw new Error(`No data files found for mode: ${config.mode}`);
   }
 
-  const jsonlContent = await convertToJSONL(files);
+  const jsonlContent = await convertToJSONL(files, repository);
   const lines = jsonlContent.split('\n').filter((l) => l.trim());
 
   const stats: PublishStats = {
@@ -219,12 +204,12 @@ export async function prepareDataset(config: HFConfig): Promise<PublishResult> {
     totalFiles: files.length,
   };
 
-  const jsonlPath = `data/hf-dataset-${config.mode}.jsonl`;
-  await writeFile(jsonlPath, jsonlContent);
+  const jsonlFilename = `hf-dataset-${config.mode}.jsonl`;
+  const readmeFilename = 'hf-README.md';
 
-  const readmePath = 'data/hf-README.md';
+  const jsonlPath = await repository.saveDatasetFile(jsonlFilename, jsonlContent);
   const datasetCard = generateDatasetCard(config, stats);
-  await writeFile(readmePath, datasetCard);
+  const readmePath = await repository.saveDatasetFile(readmeFilename, datasetCard);
 
   return {
     jsonlPath,

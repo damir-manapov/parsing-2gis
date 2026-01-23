@@ -1,16 +1,16 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  collectDataFiles,
-  convertToJSONL,
-  generateDatasetCard,
-  getUploadInstructions,
-} from '../src/publisher.js';
+import { convertToJSONL, generateDatasetCard, getUploadInstructions } from '../src/publisher.js';
+import { ScraperRepository } from '../src/repository.js';
+import { Logger } from '../src/utils.js';
 
 const testListDir = 'data/parsed/list';
 const testFullDir = 'data/parsed/full/organizations';
 const testListFile = `${testListDir}/test-publisher-list.json`;
 const testOrgFile = `${testFullDir}/test-publisher-org.json`;
+
+const logger = new Logger();
+const repository = new ScraperRepository(logger);
 
 describe('publisher', () => {
   beforeEach(() => {
@@ -45,26 +45,26 @@ describe('publisher', () => {
     if (existsSync(testOrgFile)) rmSync(testOrgFile);
   });
 
-  describe('collectDataFiles', () => {
+  describe('repository.collectDataFiles', () => {
     it('should collect list files', async () => {
-      const files = await collectDataFiles('list');
+      const files = await repository.collectDataFiles('list');
       expect(files.some((f) => f.includes('test-publisher-list.json'))).toBe(true);
     });
 
     it('should collect organization files', async () => {
-      const files = await collectDataFiles('full');
+      const files = await repository.collectDataFiles('full');
       expect(files.some((f) => f.includes('test-publisher-org.json'))).toBe(true);
     });
 
     it('should return empty array for non-existent mode', async () => {
-      const files = await collectDataFiles('nonexistent' as 'list');
+      const files = await repository.collectDataFiles('nonexistent' as 'list');
       expect(files).toEqual([]);
     });
   });
 
   describe('convertToJSONL', () => {
     it('should convert list files to JSONL', async () => {
-      const jsonl = await convertToJSONL([testListFile]);
+      const jsonl = await convertToJSONL([testListFile], repository);
       const lines = jsonl.split('\n');
 
       expect(lines).toHaveLength(2);
@@ -72,7 +72,7 @@ describe('publisher', () => {
     });
 
     it('should convert org files to JSONL', async () => {
-      const jsonl = await convertToJSONL([testOrgFile]);
+      const jsonl = await convertToJSONL([testOrgFile], repository);
       const lines = jsonl.split('\n');
 
       expect(lines).toHaveLength(1);

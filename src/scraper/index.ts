@@ -1,175 +1,9 @@
-import type { Page } from 'playwright';
-import { chromium } from 'playwright';
-import type { DataExtractionResult, ScrapedOrganization, ScraperOptions } from '../types/index.js';
-import { Logger, sleep } from '../utils.js';
+import type { ScrapedOrganization, ScraperOptions } from '../types/index.js';
+import { Logger } from '../utils.js';
+import { closeBrowser, createBrowserSession } from './browser.js';
 import { DEFAULT_NAVIGATION_TIMEOUT, DEFAULT_WAIT_TIMEOUT } from './constants.js';
-import { extractOrganization } from './organization.js';
-import { scrapeReviews } from './reviews.js';
-
-// Block unnecessary resources to improve performance
-export async function setupRequestBlocking(page: Page, logger: Logger) {
-  await page.route('**/*', (route) => {
-    const url = route.request().url();
-    const resourceType = route.request().resourceType();
-
-    // Block images, fonts, media, stylesheets to speed up scraping
-    if (['image', 'font', 'media', 'stylesheet'].includes(resourceType)) {
-      route.abort();
-      return;
-    }
-
-    // Block analytics, ads, and tracking
-    if (
-      url.includes('google-analytics') ||
-      url.includes('googletagmanager') ||
-      url.includes('yandex.ru/metrika') ||
-      url.includes('mc.yandex.ru') ||
-      url.includes('doubleclick.net') ||
-      url.includes('/ads/') ||
-      url.includes('/metrics/')
-    ) {
-      route.abort();
-      return;
-    }
-
-    route.continue();
-  });
-  logger.debug('Request blocking enabled (images, fonts, analytics)');
-}
-
-// Retry wrapper for operations that might fail
-export async function withRetry<T>(
-  fn: () => Promise<T>,
-  maxRetries: number,
-  logger: Logger,
-  operationName: string,
-): Promise<T | null> {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      if (attempt === maxRetries) {
-        logger.error(`${operationName} failed after ${maxRetries} attempts: ${errorMsg}`);
-        return null;
-      }
-      logger.warn(`${operationName} attempt ${attempt} failed: ${errorMsg}, retrying...`);
-      await sleep(1000 * attempt); // Exponential backoff
-    }
-  }
-  return null;
-}
-
-// Extract data from page using initialState
-export async function extractDataFromPage(
-  page: Page,
-  logger: Logger,
-): Promise<DataExtractionResult | null> {
-  try {
-    const extraction = await page.evaluate(() => {
-      // biome-ignore lint/suspicious/noExplicitAny: Browser window object is dynamic
-      const initialState = (window as any).initialState;
-      const profileData = initialState?.data?.entity?.profile;
-
-      if (profileData) {
-        const profiles = Object.values(profileData);
-        if (profiles.length > 0) {
-          // biome-ignore lint/suspicious/noExplicitAny: 2GIS profile structure is dynamic
-          const item = (profiles[0] as any)?.data;
-          if (item) {
-            return {
-              item,
-              source: 'initialState' as const,
-              fullData: initialState,
-            };
-          }
-        }
-      }
-
-      return null;
-    });
-
-    if (extraction) {
-      logger.debug('Extracted data from initialState');
-    }
-
-    return extraction;
-  } catch (e) {
-    logger.warn(`Failed to extract data: ${e}`);
-    return null;
-  }
-}
-
-async function scrapeSingleOrganization(
-  page: Page,
-  url: string,
-  logger: Logger,
-  options: ScraperOptions,
-  // biome-ignore lint/suspicious/noExplicitAny: Raw 2GIS data structure is dynamic
-): Promise<{ organization: ScrapedOrganization; rawData: any } | null> {
-  const startTime = Date.now();
-
-  // Navigate to firm page and wait for DOM to load
-  const navStart = Date.now();
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: DEFAULT_NAVIGATION_TIMEOUT });
-  const navTime = Date.now() - navStart;
-  logger.debug(`⏱️  Navigation: ${navTime}ms`);
-
-  // Wait for initialState to be available
-  const waitStart = Date.now();
-  // biome-ignore lint/suspicious/noExplicitAny: Browser window object is dynamic
-  await page.waitForFunction(() => typeof (window as any).initialState !== 'undefined', {
-    timeout: 5000,
-  });
-  const waitTime = Date.now() - waitStart;
-  logger.debug(`⏱️  Wait for initialState: ${waitTime}ms`);
-
-  // Extract data from page
-  const extractStart = Date.now();
-  const extraction = await extractDataFromPage(page, logger);
-  const extractTime = Date.now() - extractStart;
-  logger.debug(`⏱️  Data extraction: ${extractTime}ms`);
-
-  if (!extraction) {
-    throw new Error('No data found for this organization');
-  }
-
-  const { item, source, fullData } = extraction;
-
-  // Build raw data entry - save only organization-related data
-  const profileData = fullData?.data?.entity?.profile;
-  const rawDataContent = profileData
-    ? {
-        meta: fullData?.meta,
-        result: {
-          items: [item],
-        },
-      }
-    : fullData; // Fallback to full state if structure is unexpected
-
-  const rawData = {
-    source,
-    url,
-    data: rawDataContent,
-  };
-
-  // Extract organization data
-  const organization = extractOrganization(item, logger);
-
-  // Scrape reviews if in full-with-reviews mode
-  if (options.scrapingMode === 'full-with-reviews' && item.id) {
-    const reviewsStart = Date.now();
-    const reviews = await scrapeReviews(page, item.id, options.maxReviewsPerOrg, logger);
-    const reviewsTime = Date.now() - reviewsStart;
-    logger.debug(`⏱️  Reviews extraction: ${reviewsTime}ms (${reviews.length} reviews)`);
-    organization.reviews = reviews;
-  }
-
-  const totalTime = Date.now() - startTime;
-  logger.debug(`⏱️  Total page time: ${totalTime}ms`);
-
-  return { organization, rawData };
-}
+import { withRetry } from './helpers.js';
+import { scrapeSingleOrganization } from './single-org.js';
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Main orchestration function handles multiple scraping modes
 export async function scrapeSearchResults(
@@ -181,15 +15,7 @@ export async function scrapeSearchResults(
     `Starting scraper with options: maxRecords=${options.maxRecords}, delay=${options.delayMs}ms, retries=${options.maxRetries}, headless=${options.headless}, mode=${options.scrapingMode}${options.scrapingMode === 'full-with-reviews' ? `, reviews=${options.maxReviewsPerOrg}` : ''}`,
   );
 
-  const browser = await chromium.launch({ headless: options.headless });
-  const context = await browser.newContext({
-    userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
-  });
-  const page = await context.newPage();
-
-  // Setup request blocking
-  await setupRequestBlocking(page, logger);
+  const { browser, page } = await createBrowserSession(options.headless, logger);
 
   const organizations: ScrapedOrganization[] = [];
   // biome-ignore lint/suspicious/noExplicitAny: Raw 2GIS data structure is dynamic
@@ -218,15 +44,14 @@ export async function scrapeSearchResults(
         logger.error(`Failed to scrape organization ${options.orgId}`);
       }
 
-      await browser.close();
-      logger.debug('Browser closed');
+      await closeBrowser(browser, logger);
       return { organizations, rawData };
     }
 
     // Otherwise, proceed with search query
     if (!options.query) {
       logger.error('Either query or orgId must be provided');
-      await browser.close();
+      await closeBrowser(browser, logger);
       return { organizations, rawData };
     }
 
@@ -250,7 +75,7 @@ export async function scrapeSearchResults(
 
     if (!navigateSuccess) {
       logger.error('Failed to load search page');
-      await browser.close();
+      await closeBrowser(browser, logger);
       return { organizations, rawData };
     }
 
@@ -271,7 +96,7 @@ export async function scrapeSearchResults(
 
     if (!resultsFound) {
       logger.error('No search results found');
-      await browser.close();
+      await closeBrowser(browser, logger);
       return { organizations, rawData };
     }
 
@@ -363,8 +188,7 @@ export async function scrapeSearchResults(
 
     logger.info(`Scraping complete: ${successCount} succeeded, ${failureCount} failed`);
   } finally {
-    await browser.close();
-    logger.debug('Browser closed');
+    await closeBrowser(browser, logger);
   }
 
   return { organizations, rawData };

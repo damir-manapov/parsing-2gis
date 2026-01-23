@@ -80,8 +80,8 @@ bun scripts/export-reviews-dataset.ts --format jsonl --output data/exports
 ```
 
 Outputs:
-- `data/reviews-dataset.jsonl` - One JSON object per line: `{"text":"...", "rating":5}`
-- `data/reviews-dataset.csv` - CSV format: `rating,text`
+- `data/exports/reviews-dataset.jsonl` - One JSON object per line: `{"text":"...", "rating":5}`
+- `data/exports/reviews-dataset.csv` - CSV format: `rating,text`
 
 ### Organization by ID
 
@@ -133,16 +133,17 @@ data/
 │   │   └── organizations/ # Raw organization data
 │   └── full-with-reviews/
 │       └── organizations/ # Raw org data with reviews
-└── parsed/
-    ├── list/              # Parsed list files (for Stage 2)
-    ├── full/
-    │   ├── organizations/ # Individual org files: {orgId}-{timestamp}.json
-    │   └── manifests/     # Batch metadata
-    ├── full-with-reviews/
-    │   ├── organizations/ # Individual org files with reviews
-    │   ├── reviews/       # Aggregated reviews
-    │   └── manifests/     # Batch metadata
-    └── organizations/     # Org-by-ID mode outputs
+├── parsed/
+│   ├── list/              # Parsed list files (for Stage 2)
+│   ├── full/
+│   │   ├── organizations/ # Individual org files: {orgId}-{timestamp}.json
+│   │   └── manifests/     # Batch metadata
+│   ├── full-with-reviews/
+│   │   ├── organizations/ # Individual org files with reviews
+│   │   ├── reviews/       # Aggregated reviews
+│   │   └── manifests/     # Batch metadata
+│   └── organizations/     # Org-by-ID mode outputs
+└── exports/               # Prepared datasets (reviews-dataset.jsonl/csv)
 ```
 
 ## Development

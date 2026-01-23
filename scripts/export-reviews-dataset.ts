@@ -26,9 +26,8 @@ interface ReviewFile {
 
 const args = parseArgs(process.argv.slice(2), {
   format: 'jsonl',
-  output: 'data',
+  output: 'data/exports',
 });
-
 const format = args.format as 'jsonl' | 'csv';
 
 if (!['jsonl', 'csv'].includes(format)) {

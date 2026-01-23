@@ -1,15 +1,13 @@
 /**
  * Repository for Hugging Face dataset publishing operations
+ * Simplified to only support reviews mode
  */
 
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-
-export type PublishMode = 'list' | 'full' | 'full-with-reviews' | 'reviews';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 export interface PublishStats {
   totalRecords: number;
-  totalFiles: number;
 }
 
 export interface PrepareResult {
@@ -18,42 +16,26 @@ export interface PrepareResult {
   stats: PublishStats;
 }
 
+const REVIEWS_EXPORT_PATH = 'data/exports/reviews-dataset.jsonl';
+
 export class PublisherRepository {
   /**
-   * Collect data files for a given publish mode
+   * Check if reviews dataset exists
    */
-  async collectDataFiles(mode: PublishMode): Promise<string[]> {
-    // Special case: reviews mode uses pre-exported file
-    if (mode === 'reviews') {
-      const exportedPath = 'data/exports/reviews-dataset.jsonl';
-      if (existsSync(exportedPath)) {
-        return [exportedPath];
-      }
-      return [];
-    }
-
-    const basePath = `data/parsed/${mode}`;
-
-    try {
-      if (mode === 'list') {
-        const files = await readdir(basePath);
-        return files.filter((f) => f.endsWith('.json')).map((f) => `${basePath}/${f}`);
-      }
-      const files = await readdir(`${basePath}/organizations`);
-      return files
-        .filter((f) => f.endsWith('.json') && !f.includes('manifest'))
-        .map((f) => `${basePath}/organizations/${f}`);
-    } catch {
-      return [];
-    }
+  hasReviewsDataset(): boolean {
+    return existsSync(REVIEWS_EXPORT_PATH);
   }
 
   /**
-   * Read and parse a JSON file
+   * Read reviews JSONL file and return content
    */
-  async readJsonFile(filePath: string): Promise<unknown> {
-    const content = await readFile(filePath, 'utf-8');
-    return JSON.parse(content);
+  async readReviewsDataset(): Promise<string> {
+    if (!this.hasReviewsDataset()) {
+      throw new Error(
+        `Reviews dataset not found at ${REVIEWS_EXPORT_PATH}. Run: bun scripts/export-reviews-dataset.ts`,
+      );
+    }
+    return await readFile(REVIEWS_EXPORT_PATH, 'utf-8');
   }
 
   /**
@@ -67,61 +49,17 @@ export class PublisherRepository {
   }
 
   /**
-   * Convert data files to JSONL format
-   */
-  async convertToJSONL(files: string[]): Promise<string> {
-    const lines: string[] = [];
-
-    for (const file of files) {
-      try {
-        // If it's already a JSONL file, read it directly
-        if (file.endsWith('.jsonl')) {
-          const content = await readFile(file, 'utf-8');
-          const jsonlLines = content.split('\n').filter((l) => l.trim());
-          lines.push(...jsonlLines);
-          continue;
-        }
-
-        const parsed = await this.readJsonFile(file);
-        const data = (parsed as { data?: unknown }).data || parsed;
-
-        if (Array.isArray(data)) {
-          for (const item of data) {
-            lines.push(JSON.stringify(item));
-          }
-        } else {
-          lines.push(JSON.stringify(data));
-        }
-      } catch {
-        // Skip files that can't be parsed
-      }
-    }
-
-    return lines.join('\n');
-  }
-
-  /**
    * Prepare dataset files for upload
    */
-  async prepareDataset(
-    mode: PublishMode,
-    generateReadme: (stats: PublishStats) => string,
-  ): Promise<PrepareResult> {
-    const files = await this.collectDataFiles(mode);
-
-    if (files.length === 0) {
-      throw new Error(`No data files found for mode: ${mode}`);
-    }
-
-    const jsonlContent = await this.convertToJSONL(files);
+  async prepareDataset(generateReadme: (stats: PublishStats) => string): Promise<PrepareResult> {
+    const jsonlContent = await this.readReviewsDataset();
     const lines = jsonlContent.split('\n').filter((l) => l.trim());
 
     const stats: PublishStats = {
       totalRecords: lines.length,
-      totalFiles: files.length,
     };
 
-    const jsonlPath = await this.saveDatasetFile(`hf-dataset-${mode}.jsonl`, jsonlContent);
+    const jsonlPath = await this.saveDatasetFile('hf-dataset-reviews.jsonl', jsonlContent);
     const readmePath = await this.saveDatasetFile('hf-README.md', generateReadme(stats));
 
     return { jsonlPath, readmePath, stats };

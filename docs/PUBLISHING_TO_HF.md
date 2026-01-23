@@ -1,6 +1,6 @@
 # Publishing to Hugging Face
 
-This guide explains how to publish your scraped 2GIS dataset to Hugging Face.
+This guide explains how to publish your scraped 2GIS reviews dataset to Hugging Face.
 
 **Example Published Dataset**: [tebuchet/org-reviews](https://huggingface.co/datasets/tebuchet/org-reviews)
 
@@ -8,20 +8,14 @@ This guide explains how to publish your scraped 2GIS dataset to Hugging Face.
 
 1. **Hugging Face Account**: Create an account at [huggingface.co](https://huggingface.co)
 2. **Access Token**: Get your token from [Settings → Access Tokens](https://huggingface.co/settings/tokens)
-3. **Install HF CLI** (choose one):
+3. **Login to HF** (one-time setup):
    ```bash
-   # Using uv (recommended)
-   uv tool install huggingface_hub
-   
-   # Or using pip
-   pip install huggingface_hub[cli]
+   uv tool run --from huggingface_hub hf login
    ```
 
 ## Quick Start
 
-### 1. Prepare Your Dataset
-
-First, scrape some data:
+### 1. Scrape Reviews Data
 
 ```bash
 # Stage 1: Collect org IDs
@@ -34,63 +28,34 @@ bun scripts/scrape.ts --from-list data/parsed/list/list-ресторан-*.json 
 bun scripts/export-reviews-dataset.ts
 ```
 
-### 2. Convert to HF Format
+### 2. Prepare for HF Upload
 
 ```bash
-# For reviews dataset (recommended for ML/sentiment analysis)
-bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name" --mode reviews
-
-# For basic organization data
-bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name" --mode full
-
-# For organizations with reviews embedded
-bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name" --mode full-with-reviews
-
-# For list data only
-bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name" --mode list
+bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name"
 ```
 
-Available modes:
-- `reviews` - Simple text + rating pairs (ideal for sentiment analysis)
-- `full` - Organization details only
-- `full-with-reviews` - Organizations with embedded reviews
-- `list` - Basic organization list from search
-
 This will create:
-- `data/hf-dataset-{mode}.jsonl` - Your dataset in JSONL format
+- `data/hf-dataset-reviews.jsonl` - Your dataset in JSONL format
 - `data/hf-README.md` - Dataset card with metadata
 
 ### 3. Upload to Hugging Face
 
-#### Option A: Using uv (Recommended)
-
 ```bash
-# Login first (one-time setup)
-uv tool run --from huggingface_hub hf login
-
 # Upload dataset files
 uv tool run --from huggingface_hub hf upload username/dataset-name data/hf-dataset-reviews.jsonl train.jsonl --repo-type dataset
 uv tool run --from huggingface_hub hf upload username/dataset-name data/hf-README.md README.md --repo-type dataset
 ```
 
-#### Option B: Using huggingface-cli (pip)
+#### Alternative: Using huggingface-cli (pip)
 
 ```bash
-# Login
+pip install huggingface_hub[cli]
 huggingface-cli login
-
-# Create repository (public)
-huggingface-cli repo create username/dataset-name --type dataset
-
-# Or create private repository
-huggingface-cli repo create username/dataset-name --type dataset --private
-
-# Upload dataset
 huggingface-cli upload username/dataset-name data/hf-dataset-reviews.jsonl train.jsonl --repo-type dataset
 huggingface-cli upload username/dataset-name data/hf-README.md README.md --repo-type dataset
 ```
 
-#### Option C: Using Python
+#### Alternative: Using Python
 
 ```python
 from huggingface_hub import HfApi

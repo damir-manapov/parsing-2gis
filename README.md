@@ -92,25 +92,19 @@ bun scripts/scrape.ts --org-id 70000001044609041 --mode full-with-reviews --max-
 
 ### Publishing to Hugging Face
 
-After scraping data, you can publish it as a dataset:
+After scraping data, you can publish reviews as a dataset:
 
 ```bash
 # Export reviews first
 bun scripts/export-reviews-dataset.ts
 
-# Prepare reviews dataset for upload
-bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name" --mode reviews
+# Prepare dataset for upload
+bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name"
 
-# Upload using uv (or pip install huggingface_hub)
+# Upload using uv
 uv tool run --from huggingface_hub hf upload username/dataset-name data/hf-dataset-reviews.jsonl train.jsonl --repo-type dataset
 uv tool run --from huggingface_hub hf upload username/dataset-name data/hf-README.md README.md --repo-type dataset
 ```
-
-Available modes:
-- `reviews` - Exported reviews (text + rating)
-- `full` - Organization details
-- `full-with-reviews` - Organizations with embedded reviews
-- `list` - Basic organization list
 
 **Published dataset**: [tebuchet/org-reviews](https://huggingface.co/datasets/tebuchet/org-reviews)
 

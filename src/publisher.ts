@@ -1,81 +1,15 @@
 /**
  * Publisher for Hugging Face datasets
- * Generates dataset cards and upload instructions
+ * Generates dataset cards and upload instructions for reviews dataset
  */
 
-import type {
-  PrepareResult,
-  PublisherRepository,
-  PublishMode,
-  PublishStats,
-} from './publisher-repository.js';
+import type { PrepareResult, PublisherRepository, PublishStats } from './publisher-repository.js';
 
-export type { PublishMode, PublishStats, PrepareResult };
-export type OutputFormat = 'jsonl' | 'parquet';
+export type { PublishStats, PrepareResult };
 
 export interface HFConfig {
   datasetName: string;
-  mode: PublishMode;
   privateRepo: boolean;
-  outputFormat: OutputFormat;
-}
-
-/**
- * Get field descriptions for dataset card based on mode
- */
-function getFieldDescriptions(mode: PublishMode): string {
-  if (mode === 'list') {
-    return `
-### List Mode
-- \`name\`: Organization name
-- \`orgId\`: Unique organization identifier
-- \`rubrics\`: List of business categories
-`;
-  }
-
-  if (mode === 'full') {
-    return `
-### Full Mode
-- \`name\`: Organization name
-- \`description\`: Business description
-- \`address\`: Full address
-- \`phone\`: Contact phone number
-- \`email\`: Contact email
-- \`website\`: Organization website
-- \`coordinates\`: {lat, lon} object
-- \`rating\`: Average rating
-- \`reviewCount\`: Total number of reviews
-- \`rubrics\`: List of business categories
-- \`schedule\`: Working hours
-- \`nearestMetro\`: List of nearby metro stations
-- \`paymentMethods\`: Accepted payment methods
-- \`features\`: Organization features
-- \`orgId\`: Unique organization identifier
-`;
-  }
-
-  if (mode === 'reviews') {
-    return `
-### Reviews Mode
-- \`text\`: Review text content
-- \`rating\`: Rating (1-5 stars)
-- \`organizationName\`: Name of the reviewed organization
-`;
-  }
-
-  return `
-### Full with Reviews Mode
-All fields from Full Mode, plus:
-- \`reviews\`: Array of review objects
-  - \`id\`: Review ID
-  - \`text\`: Review text
-  - \`rating\`: Review rating (1-5)
-  - \`author\`: Author name
-  - \`dateCreated\`: Review creation date
-  - \`likes\`: Number of likes
-  - \`dislikes\`: Number of dislikes
-  - \`source\`: Review source (2GIS, Flamp, etc.)
-`;
 }
 
 /**
@@ -95,37 +29,32 @@ export function generateDatasetCard(config: HFConfig, stats: PublishStats): stri
 license: mit
 task_categories:
 - text-classification
-- information-extraction
 language:
 - ru
 tags:
 - 2gis
 - organizations
+- reviews
 - moscow
-- poi
-- geospatial
-pretty_name: 2GIS Organizations Dataset
+- sentiment-analysis
+pretty_name: 2GIS Organizations Reviews Dataset
 size_categories:
 - ${getSizeCategory(stats.totalRecords)}
 ---
 
-# 2GIS Organizations Dataset
+# 2GIS Organizations Reviews Dataset
 
-This dataset contains scraped organization data from 2GIS (Russia's leading local search and maps service).
+This dataset contains reviews scraped from 2GIS (Russia's leading local search and maps service).
 
 ## Dataset Description
 
-- **Mode**: ${config.mode}
-- **Total Records**: ${stats.totalRecords}
-- **Total Files**: ${stats.totalFiles}
-- **Format**: ${config.outputFormat.toUpperCase()}
+- **Total Reviews**: ${stats.totalRecords}
+- **Format**: JSONL
 
 ## Data Fields
-${getFieldDescriptions(config.mode)}
 
-## Data Collection
-
-Data was collected using Playwright browser automation to scrape public information from 2GIS.
+- \`text\`: Review text content
+- \`rating\`: Rating (1-5 stars)
 
 ## Usage
 
@@ -133,23 +62,18 @@ Data was collected using Playwright browser automation to scrape public informat
 from datasets import load_dataset
 
 dataset = load_dataset("${config.datasetName}")
+
+for review in dataset['train']:
+    print(f"[{review['rating']}⭐] {review['text'][:50]}...")
 \`\`\`
+
+## Data Collection
+
+Data was collected using Playwright browser automation to scrape public reviews from 2GIS.
 
 ## License
 
 MIT License - This dataset is provided for research and educational purposes.
-
-## Citation
-
-\`\`\`bibtex
-@misc{2gis_dataset,
-  author = {Your Name},
-  title = {2GIS Organizations Dataset},
-  year = {2026},
-  publisher = {Hugging Face},
-  howpublished = {\\\\url{https://huggingface.co/datasets/${config.datasetName}}}
-}
-\`\`\`
 
 ## Disclaimer
 
@@ -164,7 +88,7 @@ export async function prepareDataset(
   config: HFConfig,
   repository: PublisherRepository,
 ): Promise<PrepareResult> {
-  return repository.prepareDataset(config.mode, (stats) => generateDatasetCard(config, stats));
+  return repository.prepareDataset((stats) => generateDatasetCard(config, stats));
 }
 
 /**
@@ -174,18 +98,9 @@ export function getUploadInstructions(config: HFConfig, result: PrepareResult): 
   return `
 📤 Next steps to upload to Hugging Face:
 
-1. Install Hugging Face CLI:
-   pip install huggingface_hub[cli]
-
-2. Login to Hugging Face:
-   huggingface-cli login
-
-3. Create repository:
-   huggingface-cli repo create ${config.datasetName} --type dataset${config.privateRepo ? ' --private' : ''}
-
-4. Upload files:
-   huggingface-cli upload ${config.datasetName} ${result.jsonlPath} train.jsonl
-   huggingface-cli upload ${config.datasetName} ${result.readmePath} README.md
+1. Upload files using uv:
+   uv tool run --from huggingface_hub hf upload ${config.datasetName} ${result.jsonlPath} train.jsonl --repo-type dataset
+   uv tool run --from huggingface_hub hf upload ${config.datasetName} ${result.readmePath} README.md --repo-type dataset
 
 ✨ Done! Your dataset is ready for upload.
 `;

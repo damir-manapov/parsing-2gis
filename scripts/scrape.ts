@@ -3,7 +3,8 @@
 // Uses Playwright to scrape 2GIS search results and detail pages
 
 import { scrapeSearchResults } from '../src/scraper/index.js';
-import type { ScraperOptions } from '../src/types/index.js';
+import type { ScrapedOrganization, ScraperOptions } from '../src/types/index.js';
+import type { Metadata } from '../src/utils.js';
 import {
   createFileTimestamp,
   createMetadata,
@@ -14,7 +15,78 @@ import {
   slugify,
 } from '../src/utils.js';
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: CLI entry point handles all argument parsing and orchestration
+function displayOrganization(org: ScrapedOrganization): void {
+  console.log(`\n${org.name}`);
+  if (org.description) console.log(`  Description: ${org.description}`);
+  console.log(`  Address: ${org.address}`);
+  if (org.city || org.district) {
+    const location = [org.city, org.district, org.region].filter(Boolean).join(', ');
+    console.log(`  Location: ${location}`);
+  }
+  if (org.postcode) console.log(`  Postcode: ${org.postcode}`);
+  console.log(`  Phone: ${org.phone ?? '-'}`);
+  if (org.email) console.log(`  Email: ${org.email}`);
+  console.log(`  Website: ${org.website ?? '-'}`);
+  if (org.schedule) console.log(`  Schedule: ${org.schedule}`);
+  console.log(`  Rating: ${org.rating ?? '-'} (${org.reviewCount ?? 0} reviews)`);
+  console.log(`  Rubrics: ${org.rubrics.join(', ')}`);
+  if (org.type) console.log(`  Type: ${org.type}`);
+}
+
+async function saveResults(
+  mode: string,
+  slug: string,
+  timestamp: string,
+  metadata: Metadata,
+  organizations: ScrapedOrganization[],
+  // biome-ignore lint/suspicious/noExplicitAny: Raw 2GIS data structure is dynamic
+  rawData: any[],
+  logger: Logger,
+): Promise<void> {
+  const prefix = mode;
+
+  if (mode === 'list') {
+    await saveRawData(`${prefix}-raw-${slug}-${timestamp}.json`, metadata, rawData);
+    logger.success(`List raw data saved (${rawData.length} items)`);
+
+    await saveParsedData(`${prefix}-${slug}-${timestamp}.json`, metadata, organizations);
+    logger.success(`List parsed data saved (${organizations.length} items)`);
+    return;
+  }
+
+  // Full and full-with-reviews modes
+  await saveRawData(`${prefix}-organizations-raw-${slug}-${timestamp}.json`, metadata, rawData);
+  logger.success(`Organizations raw data saved (${rawData.length} items)`);
+
+  await saveParsedData(
+    `${prefix}-organizations-${slug}-${timestamp}.json`,
+    metadata,
+    organizations,
+  );
+  logger.success(`Organizations parsed data saved (${organizations.length} items)`);
+
+  // Save reviews separately for full-with-reviews mode
+  if (mode === 'full-with-reviews') {
+    const allReviews = organizations.flatMap((org) => {
+      if (!org.reviews || org.reviews.length === 0) return [];
+      return org.reviews.map((review) => ({
+        ...review,
+        organizationId: org.orgId,
+        organizationName: org.name,
+      }));
+    });
+
+    if (allReviews.length > 0) {
+      await saveParsedData(
+        `${prefix}-reviews-${slug}-${timestamp}.json`,
+        { ...metadata, totalResults: allReviews.length },
+        allReviews,
+      );
+      logger.success(`Reviews data saved (${allReviews.length} reviews)`);
+    }
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2), {
     query: 'кальян',
@@ -63,22 +135,10 @@ async function main() {
   console.log('='.repeat(80));
 
   for (const org of organizations) {
-    console.log(`\n${org.name}`);
-    if (org.description) console.log(`  Description: ${org.description}`);
-    console.log(`  Address: ${org.address}`);
-    if (org.city || org.district) {
-      const location = [org.city, org.district, org.region].filter(Boolean).join(', ');
-      console.log(`  Location: ${location}`);
-    }
-    if (org.postcode) console.log(`  Postcode: ${org.postcode}`);
-    console.log(`  Phone: ${org.phone ?? '-'}`);
-    if (org.email) console.log(`  Email: ${org.email}`);
-    console.log(`  Website: ${org.website ?? '-'}`);
-    if (org.schedule) console.log(`  Schedule: ${org.schedule}`);
-    console.log(`  Rating: ${org.rating ?? '-'} (${org.reviewCount ?? 0} reviews)`);
-    console.log(`  Rubrics: ${org.rubrics.join(', ')}`);
-    if (org.type) console.log(`  Type: ${org.type}`);
+    displayOrganization(org);
   }
+
+  console.log(`\n${'='.repeat(80)}\n`);
 
   // Save results
   const fileTimestamp = createFileTimestamp();
@@ -92,70 +152,16 @@ async function main() {
   });
 
   const slug = slugify(options.query);
-  const modePrefix = options.scrapingMode;
 
-  console.log('\n============================================================');
-  console.log('RESULTS SUMMARY');
-  console.log('============================================================\n');
-
-  // Save based on scraping mode
-  if (options.scrapingMode === 'list') {
-    // List mode: save basic list data
-    await saveRawData(`${modePrefix}-raw-${slug}-${fileTimestamp}.json`, metadata, rawData);
-    logger.success(`List raw data saved (${rawData.length} items)`);
-
-    await saveParsedData(`${modePrefix}-${slug}-${fileTimestamp}.json`, metadata, organizations);
-    logger.success(`List parsed data saved (${organizations.length} items)`);
-  } else if (options.scrapingMode === 'full') {
-    // Full mode: save organization details from main pages
-    await saveRawData(
-      `${modePrefix}-organizations-raw-${slug}-${fileTimestamp}.json`,
-      metadata,
-      rawData,
-    );
-    logger.success(`Organizations raw data saved (${rawData.length} items)`);
-
-    await saveParsedData(
-      `${modePrefix}-organizations-${slug}-${fileTimestamp}.json`,
-      metadata,
-      organizations,
-    );
-    logger.success(`Organizations parsed data saved (${organizations.length} items)`);
-  } else if (options.scrapingMode === 'full-with-reviews') {
-    // Full-with-reviews mode: save organizations and reviews separately
-    await saveRawData(
-      `${modePrefix}-organizations-raw-${slug}-${fileTimestamp}.json`,
-      metadata,
-      rawData,
-    );
-    logger.success(`Organizations raw data saved (${rawData.length} items)`);
-
-    await saveParsedData(
-      `${modePrefix}-organizations-${slug}-${fileTimestamp}.json`,
-      metadata,
-      organizations,
-    );
-    logger.success(`Organizations parsed data saved (${organizations.length} items)`);
-
-    // Extract and save reviews separately
-    const allReviews = organizations.flatMap((org) => {
-      if (!org.reviews || org.reviews.length === 0) return [];
-      return org.reviews.map((review) => ({
-        ...review,
-        organizationId: org.orgId,
-        organizationName: org.name,
-      }));
-    });
-
-    if (allReviews.length > 0) {
-      await saveParsedData(
-        `${modePrefix}-reviews-${slug}-${fileTimestamp}.json`,
-        { ...metadata, totalResults: allReviews.length },
-        allReviews,
-      );
-      logger.success(`Reviews data saved (${allReviews.length} reviews)`);
-    }
-  }
+  await saveResults(
+    options.scrapingMode,
+    slug,
+    fileTimestamp,
+    metadata,
+    organizations,
+    rawData,
+    logger,
+  );
 
   console.log(`\n${'='.repeat(80)}`);
   logger.success('Scraping completed successfully!');

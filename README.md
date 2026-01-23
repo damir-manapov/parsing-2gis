@@ -99,11 +99,11 @@ After scraping data, you can publish reviews as a dataset:
 bun scripts/export-reviews-dataset.ts
 
 # Prepare dataset for upload
-bun scripts/publish-to-hf.ts --dataset-name "username/dataset-name"
+bun scripts/publish-to-hf.ts --dataset-name "tebuchet/org-reviews"
 
 # Upload using uv
-uv tool run --from huggingface_hub hf upload username/dataset-name data/hf-dataset-reviews.jsonl train.jsonl --repo-type dataset
-uv tool run --from huggingface_hub hf upload username/dataset-name data/hf-README.md README.md --repo-type dataset
+uv tool run --from huggingface_hub hf upload tebuchet/org-reviews data/hf-dataset-reviews.jsonl train.jsonl --repo-type dataset
+uv tool run --from huggingface_hub hf upload tebuchet/org-reviews data/hf-README.md README.md --repo-type dataset
 ```
 
 **Published dataset**: [tebuchet/org-reviews](https://huggingface.co/datasets/tebuchet/org-reviews)

@@ -82,15 +82,21 @@ async function main() {
 
   // Save results using repository
   const repository = new ScraperRepository(logger);
-  await repository.save(
-    {
-      query: options.query,
-      mode: options.scrapingMode,
-      responseTimeMs: responseTime,
-    },
-    organizations,
-    rawData,
-  );
+
+  if (options.scrapingMode === 'list') {
+    await repository.saveListData(options.query, responseTime, organizations, rawData);
+  } else if (options.scrapingMode === 'full') {
+    await repository.saveOrganizations(options.query, responseTime, organizations, rawData, 'full');
+  } else if (options.scrapingMode === 'full-with-reviews') {
+    await repository.saveOrganizations(
+      options.query,
+      responseTime,
+      organizations,
+      rawData,
+      'full-with-reviews',
+    );
+    await repository.saveReviews(options.query, responseTime, organizations);
+  }
 
   console.log(`\n${'='.repeat(80)}`);
   logger.success('Scraping completed successfully!');
